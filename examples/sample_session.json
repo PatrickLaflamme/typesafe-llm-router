@@ -1,0 +1,22 @@
+{
+  "session": [
+    {
+      "role": "system",
+      "content": "You are a concise coding assistant."
+    },
+    {
+      "role": "user",
+      "content": "Explain how prompt caching affects mid-session model switches."
+    },
+    {
+      "role": "assistant",
+      "content": "When you switch models, the previous model's prompt cache usually cannot be reused, so the next turn pays full input price again."
+    },
+    {
+      "role": "user",
+      "content": "Given that, should we stay on the current model for a short follow-up, or switch to something cheaper?"
+    }
+  ],
+  "current_model": "gpt-4o-mini",
+  "allowlist": ["gpt-4o-mini", "gpt-4o", "claude-haiku-3.5", "claude-sonnet-4"]
+}

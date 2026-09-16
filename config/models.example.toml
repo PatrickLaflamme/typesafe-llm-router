@@ -1,0 +1,36 @@
+# Illustrative cost / cache table — replace with your real provider rates.
+# Units: USD per million tokens (MTok).
+#
+# Load with: typesafe-llm-router route --catalog config/models.example.toml ...
+
+[models.gpt-4o-mini]
+input_usd_per_mtok = 0.15
+output_usd_per_mtok = 0.60
+cache_read_usd_per_mtok = 0.075
+cache_write_usd_per_mtok = 0.375
+quality_tier = "balanced"
+notes = "Fast/cheap; prompt-cache friendly for long sessions."
+
+[models.gpt-4o]
+input_usd_per_mtok = 2.50
+output_usd_per_mtok = 10.0
+cache_read_usd_per_mtok = 1.25
+cache_write_usd_per_mtok = 6.25
+quality_tier = "high"
+notes = "Higher quality; switching mid-session drops cache locality."
+
+[models.claude-sonnet-4]
+input_usd_per_mtok = 3.0
+output_usd_per_mtok = 15.0
+cache_read_usd_per_mtok = 0.30
+cache_write_usd_per_mtok = 3.75
+quality_tier = "high"
+notes = "Strong reasoning; aggressive cache-read discount."
+
+[models."claude-haiku-3.5"]
+input_usd_per_mtok = 0.80
+output_usd_per_mtok = 4.0
+cache_read_usd_per_mtok = 0.08
+cache_write_usd_per_mtok = 1.0
+quality_tier = "fast"
+notes = "Low latency / cost; good for simple turns."
