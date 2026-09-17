@@ -16,6 +16,9 @@ pub enum RouterError {
     #[error("TypeSafe client error: {0}")]
     Typesafe(#[from] TypesafeError),
 
+    #[error("model source error: {0}")]
+    ModelSource(#[from] ModelSourceError),
+
     #[error("invalid router decision: {0}")]
     InvalidDecision(String),
 
@@ -45,4 +48,22 @@ pub enum TypesafeError {
 
     #[error("unexpected answer shape: {0}")]
     UnexpectedAnswer(String),
+}
+
+#[derive(Debug, Error)]
+pub enum ModelSourceError {
+    #[error("missing or empty CURSOR_API_KEY")]
+    MissingCursorApiKey,
+
+    #[error("Cursor agent helper failed: {0}")]
+    CursorHelper(String),
+
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error("JSON error: {0}")]
+    Json(#[from] serde_json::Error),
+
+    #[error("{0}")]
+    Other(String),
 }

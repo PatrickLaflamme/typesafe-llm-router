@@ -1,4 +1,5 @@
 /target/
+.router-data/
 .env
 .env.*
 !.env.example

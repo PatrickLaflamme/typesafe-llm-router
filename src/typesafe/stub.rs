@@ -1,16 +1,20 @@
 //! Offline stub for compile + tests without network or API keys.
 //!
-//! When not forced, applies lightweight decision-rules heuristics from
-//! `task_class` / `prefix_reuse` so Examples A–E produce inspectable output.
+//! Handles Choice routing and Score rubrics (async worker / lab).
 
 use std::collections::BTreeMap;
 
 use serde_json::Value;
 
-use super::api::{Answer, ChoiceAnswer, Question, SystemOneRequest, SystemOneResponse, Usage};
+use super::api::{
+    Answer, ChoiceAnswer, Question, ScoreAnswer, SystemOneRequest, SystemOneResponse, Usage,
+};
 use super::TypesafeClient;
 use crate::error::TypesafeError;
 use crate::pack::{ROUTE_QUESTION_ID, WHY_QUESTION_ID};
+use crate::score::{
+    INSTRUCTION_FOLLOW_QUESTION_ID, QUALITY_QUESTION_ID, TASK_FIT_QUESTION_ID,
+};
 
 /// Deterministic stub: heuristics from packed state signals, else first option.
 #[derive(Debug, Default, Clone)]
@@ -36,11 +40,41 @@ impl StubTypesafeClient {
 
 impl TypesafeClient for StubTypesafeClient {
     fn system_one(&self, request: &SystemOneRequest) -> Result<SystemOneResponse, TypesafeError> {
-        let route_q = request
-            .questions
-            .get(ROUTE_QUESTION_ID)
-            .ok_or_else(|| TypesafeError::UnexpectedAnswer("missing route_to question".into()))?;
+        let mut answers = BTreeMap::new();
 
+        if request.questions.contains_key(ROUTE_QUESTION_ID) {
+            answers.extend(self.answer_route(request)?);
+        }
+
+        for (id, q) in &request.questions {
+            if let Question::Score(score_q) = q {
+                answers.insert(id.clone(), stub_score_answer(id, &score_q.criteria));
+            }
+        }
+
+        if answers.is_empty() {
+            return Err(TypesafeError::UnexpectedAnswer(
+                "stub: no Choice or Score questions to answer".into(),
+            ));
+        }
+
+        Ok(SystemOneResponse {
+            model: request.model.clone(),
+            answers,
+            usage: Some(Usage {
+                input_tokens: 128,
+                output_tokens: 16,
+            }),
+        })
+    }
+}
+
+impl StubTypesafeClient {
+    fn answer_route(
+        &self,
+        request: &SystemOneRequest,
+    ) -> Result<BTreeMap<String, Answer>, TypesafeError> {
+        let route_q = request.questions.get(ROUTE_QUESTION_ID).unwrap();
         let options = match route_q {
             Question::Choice(c) => c.criteria.keys().cloned().collect::<Vec<_>>(),
             _ => {
@@ -151,20 +185,43 @@ impl TypesafeClient for StubTypesafeClient {
                 confidence: 0.7,
             }),
         );
-
-        Ok(SystemOneResponse {
-            model: request.model.clone(),
-            answers,
-            usage: Some(Usage {
-                input_tokens: 128,
-                output_tokens: 16,
-            }),
-        })
+        Ok(answers)
     }
 }
 
-/// Prefer model ids whose catalog tier (embedded in candidate rows) matches
-/// decision-rules defaults for the given task_class.
+fn stub_score_answer(id: &str, criteria: &[String]) -> Answer {
+    let n_levels = criteria.len().max(1);
+    // Bias toward upper-mid levels for demo inspectability.
+    let peak = match id {
+        QUALITY_QUESTION_ID => (n_levels.saturating_sub(1)).min(2),
+        INSTRUCTION_FOLLOW_QUESTION_ID => n_levels.saturating_sub(1),
+        TASK_FIT_QUESTION_ID => (n_levels.saturating_sub(1)).min(1),
+        _ => n_levels / 2,
+    };
+    let mut probabilities = BTreeMap::new();
+    let mut legend = BTreeMap::new();
+    let rem = if n_levels <= 1 {
+        0.0
+    } else {
+        0.25 / (n_levels as f64 - 1.0)
+    };
+    for i in 0..n_levels {
+        let key = i.to_string();
+        let label = criteria
+            .get(i)
+            .cloned()
+            .unwrap_or_else(|| format!("level_{i}"));
+        legend.insert(key.clone(), label);
+        probabilities.insert(key, if i == peak { 0.75 } else { rem });
+    }
+    Answer::Score(ScoreAnswer {
+        score: peak as f64,
+        legend,
+        probabilities,
+        confidence: 0.72,
+    })
+}
+
 fn heuristic_choice(state: &Value, options: &[String], current: Option<&str>) -> String {
     let task = state
         .pointer("/signals/task_class")
@@ -184,7 +241,6 @@ fn heuristic_choice(state: &Value, options: &[String], current: Option<&str>) ->
         _ => None,
     };
 
-    // Strong prefix + current still allowlisted → continue (cache locality).
     if prefix == Some("strong") {
         if let Some(cur) = current {
             if options.iter().any(|o| o == cur) && !matches!(task, Some("long-reason" | "tool-use"))
