@@ -16,8 +16,8 @@ pub enum RouterError {
     #[error("TypeSafe client error: {0}")]
     Typesafe(#[from] TypesafeError),
 
-    #[error("model source error: {0}")]
-    ModelSource(#[from] ModelSourceError),
+    #[error("model provider error: {0}")]
+    ModelProvider(#[from] ModelProviderError),
 
     #[error("invalid router decision: {0}")]
     InvalidDecision(String),
@@ -51,12 +51,21 @@ pub enum TypesafeError {
 }
 
 #[derive(Debug, Error)]
-pub enum ModelSourceError {
+pub enum ModelProviderError {
     #[error("missing or empty CURSOR_API_KEY")]
     MissingCursorApiKey,
 
     #[error("Cursor agent helper failed: {0}")]
     CursorHelper(String),
+
+    #[error("missing Databricks credentials: set DATABRICKS_HOST and DATABRICKS_TOKEN")]
+    MissingDatabricksCredentials,
+
+    #[error("Databricks AI Gateway HTTP error: {0}")]
+    DatabricksHttp(String),
+
+    #[error("Databricks AI Gateway returned HTTP {status}: {body}")]
+    DatabricksApi { status: u16, body: String },
 
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),

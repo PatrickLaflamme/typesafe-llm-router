@@ -1,21 +1,21 @@
 //! Offline model execution for A–E fixtures and morning demo.
 //!
-//! Stub ids match Cursor ModelSource ids so Choice allowlist == execute id
+//! Stub ids match Cursor ModelProvider ids so Choice allowlist == execute id
 //! (Patrick lock 2026-09-17). Prices are obvious fixture rates, not live quotes.
 
-use super::{CompleteRequest, CompleteResponse, ModelInfo, ModelSource, UsageMeta};
+use super::{CompleteRequest, CompleteResponse, ModelInfo, ModelProvider, UsageMeta};
 use crate::catalog::ModelTier;
-use crate::error::ModelSourceError;
+use crate::error::ModelProviderError;
 use crate::types::TaskClass;
 
 /// Deterministic stub: returns visible fixture text (no network).
 #[derive(Debug, Default, Clone)]
-pub struct StubModelSource {
+pub struct StubModelProvider {
     /// Optional task_class hint for fixture-shaped outputs (demo).
     pub task_class: Option<TaskClass>,
 }
 
-impl StubModelSource {
+impl StubModelProvider {
     pub fn new() -> Self {
         Self::default()
     }
@@ -25,12 +25,12 @@ impl StubModelSource {
     }
 }
 
-impl ModelSource for StubModelSource {
+impl ModelProvider for StubModelProvider {
     fn name(&self) -> &'static str {
         "stub"
     }
 
-    fn list_models(&self) -> Result<Vec<ModelInfo>, ModelSourceError> {
+    fn list_models(&self) -> Result<Vec<ModelInfo>, ModelProviderError> {
         // Obvious fixture USD/MTok — not Cursor live rates (see CursorAgentSdkSource).
         Ok(vec![
             ModelInfo {
@@ -90,7 +90,7 @@ impl ModelSource for StubModelSource {
         ])
     }
 
-    fn complete(&self, req: &CompleteRequest) -> Result<CompleteResponse, ModelSourceError> {
+    fn complete(&self, req: &CompleteRequest) -> Result<CompleteResponse, ModelProviderError> {
         let output = fixture_output(self.task_class, &req.prompt, &req.model_id);
         Ok(CompleteResponse {
             model_output: output,
@@ -148,7 +148,7 @@ mod tests {
 
     #[test]
     fn short_classify_returns_billing() {
-        let src = StubModelSource::with_task_class(Some(TaskClass::ShortClassify));
+        let src = StubModelProvider::with_task_class(Some(TaskClass::ShortClassify));
         let out = src
             .complete(&CompleteRequest {
                 model_id: "composer-2.5".into(),
@@ -168,7 +168,7 @@ mod tests {
 
     #[test]
     fn list_models_uses_source_ids_with_fixture_prices() {
-        let models = StubModelSource::new().list_models().unwrap();
+        let models = StubModelProvider::new().list_models().unwrap();
         assert!(models.iter().any(|m| m.id == "composer-2.5"));
         assert!(models.iter().any(|m| m.id == "grok-4.6"));
         let cheap = models.iter().find(|m| m.id == "composer-2.5").unwrap();

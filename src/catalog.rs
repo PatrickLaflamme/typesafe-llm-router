@@ -1,9 +1,9 @@
 //! Per-model cost, tier, and cache economics used to enrich routing decisions.
 //!
-//! **Preferred (Patrick lock 2026-09-17):** build from [`crate::model_source::ModelInfo`]
+//! **Preferred (Patrick lock 2026-09-17):** build from [`crate::model_provider::ModelInfo`]
 //! via [`ModelCatalog::from_model_infos`] so Choice prices match the active
-//! ModelSource. Optional TOML (`config/models.example.toml`) remains for
-//! route-only / paper demos without a ModelSource.
+//! ModelProvider. Optional TOML (`config/models.example.toml`) remains for
+//! route-only / paper demos without a ModelProvider.
 //!
 //! Paper policy: `docs/decision-rules.md`.
 
@@ -14,7 +14,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::error::RouterError;
-use crate::model_source::ModelInfo;
+use crate::model_provider::ModelInfo;
 
 /// Placeholder capability / cost tier from decision-rules §3.3.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -86,8 +86,7 @@ pub struct ModelCostProfile {
 
 impl ModelCostProfile {
     pub fn tier_label(&self) -> Option<String> {
-        self.tier
-            .map(|t| format!("{} ({})", t.as_str(), t.label()))
+        self.tier.map(|t| format!("{} ({})", t.as_str(), t.label()))
     }
 
     pub fn band_note(&self) -> String {
@@ -125,10 +124,10 @@ impl ModelCatalog {
         self.models.get(id)
     }
 
-    /// Build a catalog directly from [`ModelSource::list_models`](crate::ModelSource::list_models).
+    /// Build a catalog directly from [`ModelProvider::list_models`](crate::ModelProvider::list_models).
     ///
     /// This is the v0 source of truth for Choice cost/cache notes when a
-    /// ModelSource is selected — no parallel TOML catalog required.
+    /// ModelProvider is selected — no parallel TOML catalog required.
     pub fn from_model_infos(models: &[ModelInfo]) -> Self {
         let mut catalog = Self::new();
         for m in models {
@@ -153,7 +152,7 @@ impl ModelCatalog {
 
     /// Built-in illustrative rates for offline route-only demos/tests.
     ///
-    /// Prefer [`Self::from_model_infos`] when a ModelSource is selected.
+    /// Prefer [`Self::from_model_infos`] when a ModelProvider is selected.
     /// These mirror Cursor source ids so fixtures stay consistent; rates are
     /// the 2026-09-17 Cursor docs snapshot (same as CursorAgentSdkSource).
     pub fn demo() -> Self {

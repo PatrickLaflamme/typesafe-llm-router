@@ -1,4 +1,4 @@
-//! Cursor Agent model source via Node sidecar (`@cursor/sdk`).
+//! Cursor Agent model provider via Node sidecar (`@cursor/sdk`).
 //!
 //! Uses `Agent.prompt(message, { apiKey, model:{id}, local:{cwd} })` (one-shot).
 //! Auth: `CURSOR_API_KEY` env only (never commit secrets).
@@ -14,11 +14,9 @@ use std::process::{Command, Stdio};
 
 use serde::{Deserialize, Serialize};
 
-use super::{
-    CompleteRequest, CompleteResponse, ModelInfo, ModelRuntime, ModelSource, UsageMeta,
-};
+use super::{CompleteRequest, CompleteResponse, ModelInfo, ModelProvider, ModelRuntime, UsageMeta};
 use crate::catalog::ModelTier;
-use crate::error::ModelSourceError;
+use crate::error::ModelProviderError;
 
 pub const CURSOR_API_KEY_ENV: &str = "CURSOR_API_KEY";
 pub const CURSOR_HELPER_ENV: &str = "CURSOR_AGENT_HELPER";
@@ -184,26 +182,26 @@ struct HelperResponse {
     error: Option<String>,
 }
 
-impl ModelSource for CursorAgentSdkSource {
+impl ModelProvider for CursorAgentSdkSource {
     fn name(&self) -> &'static str {
         "cursor-agent"
     }
 
-    fn list_models(&self) -> Result<Vec<ModelInfo>, ModelSourceError> {
+    fn list_models(&self) -> Result<Vec<ModelInfo>, ModelProviderError> {
         Ok(cursor_model_catalog())
     }
 
-    fn complete(&self, req: &CompleteRequest) -> Result<CompleteResponse, ModelSourceError> {
+    fn complete(&self, req: &CompleteRequest) -> Result<CompleteResponse, ModelProviderError> {
         let api_key = self
             .api_key
             .as_deref()
             .filter(|s| !s.is_empty())
-            .ok_or(ModelSourceError::MissingCursorApiKey)?;
+            .ok_or(ModelProviderError::MissingCursorApiKey)?;
 
         if !self.helper_path.exists() {
-            return Err(ModelSourceError::CursorHelper(format!(
+            return Err(ModelProviderError::CursorHelper(format!(
                 "helper not found at {} — set {CURSOR_HELPER_ENV} or run from repo root \
-                 (docs/model-source.md).",
+                 (docs/model-provider.md).",
                 self.helper_path.display()
             )));
         }
@@ -227,7 +225,7 @@ impl ModelSource for CursorAgentSdkSource {
             .stderr(Stdio::piped())
             .spawn()
             .map_err(|e| {
-                ModelSourceError::CursorHelper(format!(
+                ModelProviderError::CursorHelper(format!(
                     "failed to spawn `{} {}`: {e}",
                     self.node_bin,
                     self.helper_path.display()
@@ -235,10 +233,9 @@ impl ModelSource for CursorAgentSdkSource {
             })?;
 
         {
-            let stdin = child
-                .stdin
-                .as_mut()
-                .ok_or_else(|| ModelSourceError::CursorHelper("helper stdin unavailable".into()))?;
+            let stdin = child.stdin.as_mut().ok_or_else(|| {
+                ModelProviderError::CursorHelper("helper stdin unavailable".into())
+            })?;
             serde_json::to_writer(&mut *stdin, &payload)?;
             stdin.flush()?;
         }
@@ -246,21 +243,21 @@ impl ModelSource for CursorAgentSdkSource {
         let output = child.wait_with_output()?;
         let stderr = String::from_utf8_lossy(&output.stderr);
         if !output.status.success() {
-            return Err(ModelSourceError::CursorHelper(format!(
+            return Err(ModelProviderError::CursorHelper(format!(
                 "exit {}: {stderr}",
                 output.status
             )));
         }
 
         let parsed: HelperResponse = serde_json::from_slice(&output.stdout).map_err(|e| {
-            ModelSourceError::CursorHelper(format!(
+            ModelProviderError::CursorHelper(format!(
                 "invalid helper JSON ({e}): {}",
                 String::from_utf8_lossy(&output.stdout)
             ))
         })?;
 
         if let Some(err) = parsed.error {
-            return Err(ModelSourceError::CursorHelper(err));
+            return Err(ModelProviderError::CursorHelper(err));
         }
 
         Ok(CompleteResponse {

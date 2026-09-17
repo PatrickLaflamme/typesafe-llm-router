@@ -36,8 +36,7 @@ impl<'a, C: TypesafeClient> Router<'a, C> {
             .catalog
             .enrich_allowlist(&request.allowlist, request.current_model.as_deref())?;
 
-        let packed =
-            pack::pack_system_one_request(request, &candidates, &self.system_one_model);
+        let packed = pack::pack_system_one_request(request, &candidates, &self.system_one_model);
 
         let response = self.client.system_one(&packed)?;
 
@@ -87,7 +86,8 @@ impl<'a, C: TypesafeClient> Router<'a, C> {
         let alternatives_considered =
             build_alternatives(&candidates, &chosen_model, request.tools_required);
 
-        let cache_hypothesis = build_cache_hypothesis(request, chosen_profile.map(|p| p.cache_eligible));
+        let cache_hypothesis =
+            build_cache_hypothesis(request, chosen_profile.map(|p| p.cache_eligible));
 
         let rough_cost_note = build_cost_note(request, chosen_profile, &cache_hypothesis);
 
@@ -140,11 +140,7 @@ fn build_alternatives(
         .iter()
         .filter(|c| c.model_id != chosen)
         .map(|c| {
-            let tier = c
-                .profile
-                .tier
-                .map(|t| t.as_str())
-                .unwrap_or("unknown-tier");
+            let tier = c.profile.tier.map(|t| t.as_str()).unwrap_or("unknown-tier");
             let why_rejected = reject_reason(c, chosen, tools_required);
             AlternativeConsidered {
                 model_or_tier: format!("{} ({})", c.model_id, tier),
@@ -181,7 +177,9 @@ fn build_cache_hypothesis(
     match strength {
         PrefixReuse::Strong => parts.push("shared/stable system or tool preamble expected".into()),
         PrefixReuse::Weak => parts.push("partial or unstable prefix reuse".into()),
-        PrefixReuse::None => parts.push("unique / one-shot prompt; no shared prefix called out".into()),
+        PrefixReuse::None => {
+            parts.push("unique / one-shot prompt; no shared prefix called out".into())
+        }
     }
     if let Some(n) = request.prefix_tokens_est {
         parts.push(format!("prefix_tokens_est≈{n}"));
@@ -329,8 +327,10 @@ mod tests {
         assert!(!decision.alternatives_considered.is_empty());
         assert_eq!(decision.cache_hypothesis.strength, PrefixReuse::Strong);
         assert!(decision.rough_cost_note.contains("cache_read"));
-        assert!(decision.primary_reason != DecisionReason::Unspecified
-            || decision.why.primary == decision.primary_reason);
+        assert!(
+            decision.primary_reason != DecisionReason::Unspecified
+                || decision.why.primary == decision.primary_reason
+        );
     }
 
     #[test]

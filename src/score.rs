@@ -28,11 +28,8 @@ pub const QUALITY_LEVELS: [&str; 4] = [
 ];
 
 /// Ordered instruction-follow levels (index 0 = lowest).
-pub const INSTRUCTION_FOLLOW_LEVELS: [&str; 3] = [
-    "Ignores constraints",
-    "Mostly follows",
-    "Follows cleanly",
-];
+pub const INSTRUCTION_FOLLOW_LEVELS: [&str; 3] =
+    ["Ignores constraints", "Mostly follows", "Follows cleanly"];
 
 /// Optional task_fit levels (stubbed for Phase B+; not required for A–E).
 pub const TASK_FIT_LEVELS: [&str; 3] = [
@@ -188,10 +185,7 @@ pub struct ScoreJob {
 }
 
 /// Pack System One Score questions for a completed turn.
-pub fn pack_score_request(
-    job: &ScoreJob,
-    include_task_fit: bool,
-) -> SystemOneRequest {
+pub fn pack_score_request(job: &ScoreJob, include_task_fit: bool) -> SystemOneRequest {
     let state = json!({
         "task": "llm_route_outcome_score",
         "policy_ref": "docs/score-feedback-loop.md",
@@ -347,9 +341,7 @@ mod tests {
     }
 
     fn minimal_decision() -> RouterDecision {
-        use crate::types::{
-            CacheHypothesis, DecisionReason, PrefixReuse, WhyTradeoff,
-        };
+        use crate::types::{CacheHypothesis, DecisionReason, PrefixReuse, WhyTradeoff};
         RouterDecision {
             chosen_model: "composer-2.5".into(),
             chosen_tier: Some("T-small".into()),

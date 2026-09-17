@@ -1,7 +1,7 @@
 //! CLI: route, demo (morning recording), drain-score-queue.
 //!
-//! When `--model-source` is set (or implied by `--execute` / `demo`), Choice
-//! allowlist + prices come from `ModelSource.list_models()` — no separate
+//! When `--model-provider` is set (or implied by `--execute` / `demo`), Choice
+//! allowlist + prices come from `ModelProvider.list_models()` — no separate
 //! gpt-4o-mini catalog remap.
 
 use std::fs;
@@ -11,17 +11,17 @@ use std::process::ExitCode;
 use clap::{Parser, Subcommand, ValueEnum};
 use typesafe_llm_router::typesafe::{API_KEY_ENV, BASE_URL_ENV};
 use typesafe_llm_router::{
-    allowlist_from_source, complete_request_from_session, complete_turn_hot_path,
-    complete_turn_with_model_source, drain_score_queue, score_inline_lab_only, ClientMode,
-    CursorAgentSdkSource, FileOutcomeStore, FileScoreQueue, HttpTypesafeClient, ModelCatalog,
-    ModelSource, OutcomeStore, Router, RouterRequest, ScoreQueue, ScoresStatus, StubModelSource,
-    StubTypesafeClient,
+    allowlist_from_provider, complete_request_from_session, complete_turn_hot_path,
+    complete_turn_with_model_provider, drain_score_queue, score_inline_lab_only, ClientMode,
+    CursorAgentSdkSource, DatabricksAiGatewayProvider, FileOutcomeStore, FileScoreQueue,
+    HttpTypesafeClient, ModelCatalog, ModelProvider, OutcomeStore, Router, RouterRequest,
+    ScoreQueue, ScoresStatus, StubModelProvider, StubTypesafeClient,
 };
 
 #[derive(Parser, Debug)]
 #[command(
     name = "typesafe-llm-router",
-    about = "LLM session router (Choice) + ModelSource + async Score",
+    about = "LLM session router (Choice) + ModelProvider + async Score",
     version
 )]
 struct Cli {
@@ -37,9 +37,14 @@ enum Commands {
         #[arg(short, long)]
         session: PathBuf,
 
-        /// ModelSource backend (default: stub).
-        #[arg(long, value_enum, default_value_t = ModelSourceKind::Stub)]
-        model_source: ModelSourceKind,
+        /// ModelProvider backend (default: stub). Alias: `--model-source`.
+        #[arg(
+            long = "model-provider",
+            visible_alias = "model-source",
+            value_enum,
+            default_value_t = ModelProviderKind::Stub
+        )]
+        model_provider: ModelProviderKind,
 
         /// Offline Typesafe stub (default for recording).
         #[arg(long, default_value_t = true)]
@@ -69,9 +74,10 @@ enum Commands {
         #[arg(short, long)]
         current: Option<String>,
 
-        /// ModelSource for `--execute` (and to fill allowlist from list_models).
-        #[arg(long, value_enum)]
-        model_source: Option<ModelSourceKind>,
+        /// ModelProvider for `--execute` (and to fill allowlist from list_models).
+        /// Alias: `--model-source`.
+        #[arg(long = "model-provider", visible_alias = "model-source", value_enum)]
+        model_provider: Option<ModelProviderKind>,
 
         #[arg(long)]
         catalog: Option<PathBuf>,
@@ -85,7 +91,7 @@ enum Commands {
         #[arg(long)]
         live: bool,
 
-        /// After Choice, run ModelSource.complete (visible model_output).
+        /// After Choice, run ModelProvider.complete (visible model_output).
         #[arg(long)]
         execute: bool,
 
@@ -93,7 +99,7 @@ enum Commands {
         #[arg(long)]
         verbose: bool,
 
-        /// Inject model_output from file instead of ModelSource (or `-` for stdin).
+        /// Inject model_output from file instead of ModelProvider (or `-` for stdin).
         #[arg(long)]
         model_output: Option<PathBuf>,
 
@@ -138,9 +144,11 @@ enum OutputFormat {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-enum ModelSourceKind {
+enum ModelProviderKind {
     Stub,
     Cursor,
+    /// Databricks Unity AI Gateway (`DATABRICKS_HOST` + `DATABRICKS_TOKEN`).
+    Databricks,
 }
 
 fn main() -> ExitCode {
@@ -156,7 +164,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     match cli.command {
         Commands::Demo {
             session,
-            model_source,
+            model_provider,
             stub: _,
             catalog,
             system_one_model,
@@ -164,7 +172,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             score_queue_dir,
         } => run_demo(
             session,
-            model_source,
+            model_provider,
             catalog,
             system_one_model,
             outcomes_dir,
@@ -175,7 +183,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             session,
             allowlist,
             current,
-            model_source,
+            model_provider,
             catalog,
             system_one_model,
             stub,
@@ -192,19 +200,19 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             let mut request = load_request(&session, allowlist, current)?;
             let (use_stub, client_mode) = resolve_client_mode(stub, live)?;
 
-            // --execute implies a ModelSource; default stub when omitted.
+            // --execute implies a ModelProvider; default stub when omitted.
             let source_kind = if execute || model_output.is_some() {
-                Some(model_source.unwrap_or(ModelSourceKind::Stub))
+                Some(model_provider.unwrap_or(ModelProviderKind::Stub))
             } else {
-                model_source
+                model_provider
             };
 
             let (catalog, source_label) = if let Some(kind) = source_kind {
-                let (cat, label) = prepare_request_from_source(kind, &mut request)?;
+                let (cat, label) = prepare_request_from_provider(kind, &mut request)?;
                 // Optional TOML override only if caller forced --catalog without source prices.
                 let cat = if let Some(path) = catalog {
                     eprintln!(
-                        "note: --catalog overrides ModelSource prices; prefer list_models prices"
+                        "note: --catalog overrides ModelProvider prices; prefer list_models prices"
                     );
                     ModelCatalog::from_toml_file(path)?
                 } else {
@@ -221,7 +229,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
             if request.allowlist.is_empty() {
                 return Err(
-                    "allowlist is empty — pass --allowlist, --model-source, or use demo catalog"
+                    "allowlist is empty — pass --allowlist, --model-provider, or use demo catalog"
                         .into(),
                 );
             }
@@ -232,7 +240,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 let queue = FileScoreQueue::open(&score_queue_dir)?;
                 let store = FileOutcomeStore::open(&outcomes_dir)?;
-                let kind = source_kind.unwrap_or(ModelSourceKind::Stub);
+                let kind = source_kind.unwrap_or(ModelProviderKind::Stub);
 
                 if use_stub {
                     let client = StubTypesafeClient::new();
@@ -243,7 +251,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         let output = read_output(&path)?;
                         let decision = router.route(&request)?;
                         log_step(&format!("chosen_model = {}", decision.chosen_model));
-                        log_step("ModelSource skipped (using --model-output file)");
+                        log_step("ModelProvider skipped (using --model-output file)");
                         complete_turn_hot_path(
                             &router,
                             &request,
@@ -254,7 +262,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             &store,
                         )?
                     } else {
-                        log_step("ModelSource.list_models → Choice allowlist + prices");
+                        log_step("ModelProvider.list_models → Choice allowlist + prices");
                         log_step("Choice route via StubTypesafeClient (jev-latest questions)");
                         let hot = run_execute(
                             &router,
@@ -266,7 +274,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             verbose || execute,
                         )?;
                         log_step(&format!(
-                            "chosen_model = {} (= ModelSource.complete model_id)",
+                            "chosen_model = {} (= ModelProvider.complete model_id)",
                             hot.decision.chosen_model
                         ));
                         hot
@@ -295,7 +303,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             &hot.decision.chosen_model,
                             hot.decision.chosen_tier.as_deref(),
                             &hot.outcome.model_output,
-                            &hot.decision.primary_reason.as_str(),
+                            hot.decision.primary_reason.as_str(),
                         );
                         if format == OutputFormat::Json {
                             println!("\n=== DECISION JSON ===");
@@ -361,16 +369,16 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 fn run_demo(
     session: PathBuf,
-    model_source: ModelSourceKind,
+    model_provider: ModelProviderKind,
     catalog: Option<PathBuf>,
     system_one_model: String,
     outcomes_dir: PathBuf,
     score_queue_dir: PathBuf,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut request = load_request(&session, None, None)?;
-    let (catalog_from_src, src_name) = prepare_request_from_source(model_source, &mut request)?;
+    let (catalog_from_src, src_name) = prepare_request_from_provider(model_provider, &mut request)?;
     let catalog = if let Some(path) = catalog {
-        eprintln!("note: --catalog overrides ModelSource prices; prefer list_models prices");
+        eprintln!("note: --catalog overrides ModelProvider prices; prefer list_models prices");
         ModelCatalog::from_toml_file(path)?
     } else {
         catalog_from_src
@@ -384,7 +392,7 @@ fn run_demo(
 
     println!("=== PROCESS ===");
     log_step(&format!(
-        "ModelSource.list_models ({src_name}) → Choice allowlist + $/MTok"
+        "ModelProvider.list_models ({src_name}) → Choice allowlist + $/MTok"
     ));
     log_step("System One Choice route (StubTypesafeClient / jev-latest shape)");
 
@@ -395,13 +403,13 @@ fn run_demo(
 
     let _preview = complete_request_from_session("pending", &request.session, None);
     log_step(&format!(
-        "ModelSource = {src_name} (chosen_model id == complete model_id)"
+        "ModelProvider = {src_name} (chosen_model id == complete model_id)"
     ));
 
     let hot = run_execute(
         &router,
         &request,
-        model_source,
+        model_provider,
         ClientMode::Stub,
         &queue,
         &store,
@@ -417,7 +425,7 @@ fn run_demo(
             .map(|t| format!(" ({t})"))
             .unwrap_or_default()
     ));
-    log_step("ModelSource.complete → model_output ready");
+    log_step("ModelProvider.complete → model_output ready");
     log_step(&format!(
         "score: pending/enqueued (job {}) — async worker later; NOT on hot path",
         hot.score_job_id
@@ -445,24 +453,41 @@ fn run_demo(
     Ok(())
 }
 
-fn prepare_request_from_source(
-    kind: ModelSourceKind,
+fn prepare_request_from_provider(
+    kind: ModelProviderKind,
     request: &mut RouterRequest,
 ) -> Result<(ModelCatalog, &'static str), Box<dyn std::error::Error>> {
     match kind {
-        ModelSourceKind::Stub => {
-            let src = StubModelSource::with_task_class(request.task_class);
+        ModelProviderKind::Stub => {
+            let src = StubModelProvider::with_task_class(request.task_class);
             let models = src.list_models()?;
-            let (allowlist, catalog) =
-                allowlist_from_source(&models, &request.allowlist, request.current_model.as_deref())?;
+            let (allowlist, catalog) = allowlist_from_provider(
+                &models,
+                &request.allowlist,
+                request.current_model.as_deref(),
+            )?;
             request.allowlist = allowlist;
             Ok((catalog, src.name()))
         }
-        ModelSourceKind::Cursor => {
+        ModelProviderKind::Cursor => {
             let src = CursorAgentSdkSource::from_env();
             let models = src.list_models()?;
-            let (allowlist, catalog) =
-                allowlist_from_source(&models, &request.allowlist, request.current_model.as_deref())?;
+            let (allowlist, catalog) = allowlist_from_provider(
+                &models,
+                &request.allowlist,
+                request.current_model.as_deref(),
+            )?;
+            request.allowlist = allowlist;
+            Ok((catalog, src.name()))
+        }
+        ModelProviderKind::Databricks => {
+            let src = DatabricksAiGatewayProvider::from_env()?;
+            let models = src.list_models()?;
+            let (allowlist, catalog) = allowlist_from_provider(
+                &models,
+                &request.allowlist,
+                request.current_model.as_deref(),
+            )?;
             request.allowlist = allowlist;
             Ok((catalog, src.name()))
         }
@@ -472,19 +497,19 @@ fn prepare_request_from_source(
 fn run_execute<C: typesafe_llm_router::TypesafeClient, Q: ScoreQueue, S: OutcomeStore>(
     router: &Router<'_, C>,
     request: &RouterRequest,
-    kind: ModelSourceKind,
+    kind: ModelProviderKind,
     client_mode: ClientMode,
     queue: &Q,
     store: &S,
     log: bool,
 ) -> Result<typesafe_llm_router::HotPathResult, Box<dyn std::error::Error>> {
     match kind {
-        ModelSourceKind::Stub => {
-            let src = StubModelSource::with_task_class(request.task_class);
+        ModelProviderKind::Stub => {
+            let src = StubModelProvider::with_task_class(request.task_class);
             if log {
-                log_step(&format!("ModelSource.complete ({})", src.name()));
+                log_step(&format!("ModelProvider.complete ({})", src.name()));
             }
-            Ok(complete_turn_with_model_source(
+            Ok(complete_turn_with_model_provider(
                 router,
                 request,
                 &src,
@@ -494,12 +519,27 @@ fn run_execute<C: typesafe_llm_router::TypesafeClient, Q: ScoreQueue, S: Outcome
                 None,
             )?)
         }
-        ModelSourceKind::Cursor => {
+        ModelProviderKind::Cursor => {
             let src = CursorAgentSdkSource::from_env();
             if log {
-                log_step(&format!("ModelSource.complete ({})", src.name()));
+                log_step(&format!("ModelProvider.complete ({})", src.name()));
             }
-            Ok(complete_turn_with_model_source(
+            Ok(complete_turn_with_model_provider(
+                router,
+                request,
+                &src,
+                client_mode,
+                queue,
+                store,
+                None,
+            )?)
+        }
+        ModelProviderKind::Databricks => {
+            let src = DatabricksAiGatewayProvider::from_env()?;
+            if log {
+                log_step(&format!("ModelProvider.complete ({})", src.name()));
+            }
+            Ok(complete_turn_with_model_provider(
                 router,
                 request,
                 &src,
