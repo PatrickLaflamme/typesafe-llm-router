@@ -1,0 +1,18 @@
+{
+  "session": [
+    {
+      "role": "user",
+      "content": "Write three taglines for a hiking-gear brand; dry humor; no clich\u00e9s about 'adventure'."
+    }
+  ],
+  "current_model": null,
+  "task_class": "creative",
+  "length": "short",
+  "complexity": "medium",
+  "tools_required": false,
+  "latency_mode": "interactive",
+  "prefix_reuse": "weak",
+  "prefix_tokens_est": 0,
+  "tokens_in_est": 300,
+  "tokens_out_est": 250
+}

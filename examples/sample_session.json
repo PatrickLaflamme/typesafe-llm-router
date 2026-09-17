@@ -1,0 +1,30 @@
+{
+  "session": [
+    {
+      "role": "system",
+      "content": "You are a concise coding assistant."
+    },
+    {
+      "role": "user",
+      "content": "Explain how prompt caching affects mid-session model switches."
+    },
+    {
+      "role": "assistant",
+      "content": "When you switch models, the previous model's prompt cache usually cannot be reused, so the next turn pays full input price again."
+    },
+    {
+      "role": "user",
+      "content": "Given that, should we stay on the current model for a short follow-up, or switch to something cheaper?"
+    }
+  ],
+  "current_model": "composer-2.5",
+  "task_class": "code",
+  "length": "short",
+  "complexity": "simple",
+  "tools_required": false,
+  "latency_mode": "interactive",
+  "prefix_reuse": "strong",
+  "prefix_tokens_est": 800,
+  "tokens_in_est": 1500,
+  "tokens_out_est": 200
+}

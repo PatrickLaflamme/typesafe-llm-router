@@ -1,0 +1,19 @@
+# DEPRECATED as Choice source of truth (Patrick lock 2026-09-17).
+#
+# Tier → Cursor remap is NOT used for allowlist or execute ids anymore.
+# Choice allowlist + prices come from ModelSource.list_models() (baked ModelInfo).
+# Optional tier_hint on ModelInfo is the only remaining tier signal.
+#
+# Kept for historical reference only. See docs/model-source.md.
+
+[tiers.T-small]
+cursor_model_id = "composer-2.5"
+label = "deprecated map — use list_models"
+
+[tiers.T-mid]
+cursor_model_id = "grok-4.6"
+label = "deprecated map — use list_models"
+
+[tiers.T-frontier]
+cursor_model_id = "grok-4.5"
+label = "deprecated map — use list_models"

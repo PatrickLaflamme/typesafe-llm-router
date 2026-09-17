@@ -1,0 +1,18 @@
+{
+  "session": [
+    {
+      "role": "user",
+      "content": "Compare three distributed consensus designs for our multi-region queue; recommend one with failure-mode analysis. Offline memo; no tools."
+    }
+  ],
+  "current_model": null,
+  "task_class": "long-reason",
+  "length": "long",
+  "complexity": "hard",
+  "tools_required": false,
+  "latency_mode": "batch",
+  "prefix_reuse": "none",
+  "prefix_tokens_est": 0,
+  "tokens_in_est": 2000,
+  "tokens_out_est": 2500
+}

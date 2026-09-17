@@ -1,0 +1,67 @@
+# Illustrative cost / cache / tier table for route-only demos (no ModelSource).
+#
+# Prefer ModelSource.list_models() prices when executing (Patrick lock 2026-09-17).
+# Cursor snapshot: https://cursor.com/docs/models-and-pricing (2026-09-17).
+# Units: USD per million tokens (MTok).
+#
+# Load with: typesafe-llm-router route --catalog config/models.example.toml ...
+
+[models."composer-2.5"]
+id = "composer-2.5"
+tier = "T-small"
+tool_capable = true
+cache_eligible = true
+input_usd_per_mtok = 0.50
+output_usd_per_mtok = 2.50
+cache_read_usd_per_mtok = 0.20
+notes = "Composer 2.5 — low cache_read; prefer for strong prefix reuse."
+
+[models."composer-2.5-fast"]
+id = "composer-2.5-fast"
+tier = "T-small"
+tool_capable = true
+cache_eligible = true
+input_usd_per_mtok = 3.00
+output_usd_per_mtok = 15.00
+cache_read_usd_per_mtok = 0.50
+notes = "Composer 2.5 Fast."
+
+[models."grok-4.6"]
+id = "grok-4.6"
+tier = "T-mid"
+tool_capable = true
+cache_eligible = true
+input_usd_per_mtok = 2.00
+output_usd_per_mtok = 6.00
+cache_read_usd_per_mtok = 0.50
+notes = "Grok 4.6 — Cursor Models pool."
+
+[models."grok-4.6-fast"]
+id = "grok-4.6-fast"
+tier = "T-mid"
+tool_capable = true
+cache_eligible = true
+input_usd_per_mtok = 4.00
+output_usd_per_mtok = 12.00
+cache_read_usd_per_mtok = 1.00
+notes = "Grok 4.6 Fast."
+
+[models."grok-4.5"]
+id = "grok-4.5"
+tier = "T-frontier"
+tool_capable = true
+cache_eligible = true
+input_usd_per_mtok = 2.00
+output_usd_per_mtok = 6.00
+cache_read_usd_per_mtok = 0.50
+notes = "Grok 4.5 — Cursor Models pool."
+
+[models."grok-4.5-fast"]
+id = "grok-4.5-fast"
+tier = "T-frontier"
+tool_capable = true
+cache_eligible = true
+input_usd_per_mtok = 4.00
+output_usd_per_mtok = 18.00
+cache_read_usd_per_mtok = 1.00
+notes = "Grok 4.5 Fast."

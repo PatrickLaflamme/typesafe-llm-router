@@ -1,0 +1,7 @@
+/target/
+.router-data/
+.env
+.env.*
+!.env.example
+*.pem
+.DS_Store

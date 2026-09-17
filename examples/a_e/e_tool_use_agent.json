@@ -1,0 +1,22 @@
+{
+  "session": [
+    {
+      "role": "system",
+      "content": "Agent tools available: search_docs, open_file, run_tests, git_diff, read_logs, propose_patch. Prefer minimal tool loops; cite file paths."
+    },
+    {
+      "role": "user",
+      "content": "Find why CI fails on auth.test.ts and propose a patch."
+    }
+  ],
+  "current_model": "grok-4.5",
+  "task_class": "tool-use",
+  "length": "long",
+  "complexity": "hard",
+  "tools_required": true,
+  "latency_mode": "interactive",
+  "prefix_reuse": "strong",
+  "prefix_tokens_est": 1800,
+  "tokens_in_est": 3000,
+  "tokens_out_est": 1000
+}
