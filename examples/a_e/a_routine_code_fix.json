@@ -1,0 +1,19 @@
+{
+  "session": [
+    {
+      "role": "user",
+      "content": "In this 80-line TypeScript function, fix the off-by-one in pagination; keep public API.\n\nfunction paginate(items: T[], page: number, pageSize: number) {\n  const start = (page - 1) * pageSize;\n  return items.slice(start, start + pageSize + 1); // bug: +1\n}"
+    }
+  ],
+  "current_model": null,
+  "allowlist": ["gpt-4o-mini", "gpt-4o", "claude-haiku-3.5", "claude-sonnet-4"],
+  "task_class": "code",
+  "length": "medium",
+  "complexity": "medium",
+  "tools_required": false,
+  "latency_mode": "interactive",
+  "prefix_reuse": "weak",
+  "prefix_tokens_est": 0,
+  "tokens_in_est": 1200,
+  "tokens_out_est": 500
+}

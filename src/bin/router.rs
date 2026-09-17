@@ -1,4 +1,7 @@
 //! Thin CLI around [`typesafe_llm_router::Router`].
+//!
+//! Prints the full decision-record JSON to stdout (chosen_model,
+//! alternatives_considered, cache_hypothesis, rough_cost_note, primary_reason, …).
 
 use std::fs;
 use std::path::PathBuf;
@@ -24,8 +27,10 @@ struct Cli {
 #[derive(Subcommand, Debug)]
 enum Commands {
     /// Decide which allowlisted model should handle the next turn.
+    ///
+    /// Prints the full decision record JSON to stdout.
     Route {
-        /// Path to a JSON file matching [`RouterRequest`] (or session-only; see `--allowlist`).
+        /// Path to a JSON file matching [`RouterRequest`].
         #[arg(short, long)]
         session: PathBuf,
 
@@ -45,9 +50,13 @@ enum Commands {
         #[arg(long, default_value = "jev-latest")]
         system_one_model: String,
 
-        /// Use the offline stub instead of calling TypeSafe (no API key needed).
+        /// Use the offline stub (no API key / network). Recommended for A–E smoke.
         #[arg(long)]
         stub: bool,
+
+        /// Force a live HTTP call even if --stub is also passed (errors if no key).
+        #[arg(long)]
+        live: bool,
 
         /// Pretty-print JSON decision to stdout (default).
         #[arg(long, value_enum, default_value_t = OutputFormat::Json)]
@@ -78,9 +87,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             catalog,
             system_one_model,
             stub,
+            live,
             format,
         } => {
-            let mut request: RouterRequest = serde_json::from_str(&fs::read_to_string(session)?)?;
+            let mut request: RouterRequest = serde_json::from_str(&fs::read_to_string(&session)?)?;
             if let Some(list) = allowlist {
                 request.allowlist = list;
             }
@@ -88,7 +98,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 request.current_model = Some(cur);
             }
             if request.allowlist.is_empty() {
-                return Err("allowlist is empty — pass --allowlist or include it in the JSON".into());
+                return Err(
+                    "allowlist is empty — pass --allowlist or include it in the JSON".into(),
+                );
             }
 
             let catalog = match catalog {
@@ -96,7 +108,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 None => ModelCatalog::demo(),
             };
 
-            let decision = if stub {
+            let use_stub = stub || (!live && std::env::var(API_KEY_ENV).is_err());
+            if use_stub && !stub && !live {
+                eprintln!(
+                    "note: {API_KEY_ENV} unset — using offline stub (pass --live with a key, or --stub to silence)"
+                );
+            }
+
+            let decision = if use_stub && !live {
                 let client = StubTypesafeClient::new();
                 route_with(&catalog, &client, &request, &system_one_model)?
             } else {

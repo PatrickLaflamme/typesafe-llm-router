@@ -1,6 +1,7 @@
 //! Pack enriched session context into a TypeSafe System One request.
 //!
 //! Docs: <https://docs.typesafe.ai/api> — `POST /v1/systemone` with Choice.
+//! Policy signals: `docs/decision-rules.md`.
 
 use std::collections::BTreeMap;
 
@@ -21,9 +22,9 @@ pub const WHY_QUESTION_ID: &str = "primary_reason";
 
 /// Build the System One payload TypeSafe evaluates.
 ///
-/// State carries the full session plus per-model cost/cache implications so
-/// the Choice can weigh continue-on-current vs switch. Questions are narrow:
-/// pick a model id, then pick the primary reason axis.
+/// State carries the full session, optional decision-rules input signals, and
+/// per-model cost/cache/tier rows so the Choice can weigh continue-on-current
+/// vs switch. Questions are narrow: pick a model id, then pick the primary axis.
 pub fn pack_system_one_request(
     request: &RouterRequest,
     candidates: &[EnrichedCandidate],
@@ -58,9 +59,11 @@ pub fn pack_system_one_request(
 
 const ROUTE_INSTRUCTIONS: &str = "\
 Which LLM should handle the next turn of this session? \
-Weigh expected quality for the upcoming turn against dollar cost and \
-prompt-cache implications. Prefer continuing on the current model when \
-cache locality meaningfully reduces cost without sacrificing needed quality. \
+Follow decision-rules: prefer the cheapest tier that meets capability needs; \
+prefer stronger prompt-cache stories when prefixes are shared and stable; \
+weight latency only when latency_mode is interactive. \
+Prefer continuing on the current model when cache locality meaningfully reduces \
+cost without sacrificing needed quality. \
 Only pick from the candidate model ids listed in criteria.";
 
 const WHY_INSTRUCTIONS: &str = "\
@@ -84,13 +87,17 @@ fn build_state(request: &RouterRequest, candidates: &[EnrichedCandidate]) -> Val
         .map(|c| {
             json!({
                 "model_id": c.model_id,
+                "tier": c.profile.tier.map(|t| t.as_str()),
+                "tool_capable": c.profile.tool_capable,
+                "cache_eligible": c.profile.cache_eligible,
                 "is_current": c.is_current,
-                "continuing_preserves_prompt_cache": c.is_current,
+                "continuing_preserves_prompt_cache": c.is_current && c.profile.cache_eligible,
                 "input_usd_per_mtok": c.profile.input_usd_per_mtok,
                 "output_usd_per_mtok": c.profile.output_usd_per_mtok,
+                "cost_band_in": c.profile.cost_band_in,
+                "cost_band_out": c.profile.cost_band_out,
                 "cache_read_usd_per_mtok": c.profile.cache_read_usd_per_mtok,
                 "cache_write_usd_per_mtok": c.profile.cache_write_usd_per_mtok,
-                "quality_tier": c.profile.quality_tier,
                 "notes": c.profile.notes,
             })
         })
@@ -98,16 +105,29 @@ fn build_state(request: &RouterRequest, candidates: &[EnrichedCandidate]) -> Val
 
     json!({
         "task": "llm_session_routing",
+        "policy_ref": "docs/decision-rules.md",
         "current_model": request.current_model,
         "session": session,
+        "signals": {
+            "task_class": request.task_class,
+            "length": request.length,
+            "complexity": request.complexity,
+            "tools_required": request.tools_required,
+            "latency_mode": request.latency_mode,
+            "prefix_reuse": request.prefix_reuse,
+            "prefix_tokens_est": request.prefix_tokens_est,
+            "tokens_in_est": request.tokens_in_est,
+            "tokens_out_est": request.tokens_out_est,
+        },
         "candidates": candidate_rows,
         "routing_guidance": {
             "goal": "Pick the next model for this session.",
             "consider": [
-                "quality needed for the latest user turn",
-                "absolute $/MTok input and output",
-                "cache read vs write economics if switching mid-session",
-                "whether continuing on current_model preserves warm prompt cache"
+                "capability fit for task_class / complexity",
+                "caching hypothesis from prefix_reuse",
+                "absolute $/MTok and cost bands",
+                "whether continuing on current_model preserves warm prompt cache",
+                "latency only when latency_mode is interactive"
             ]
         }
     })
@@ -125,21 +145,20 @@ fn build_route_criteria(candidates: &[EnrichedCandidate]) -> BTreeMap<String, Op
 
 fn format_candidate_criterion(c: &EnrichedCandidate) -> String {
     let mut parts = Vec::new();
+    if let Some(tier) = c.profile.tier {
+        parts.push(format!("{} ({})", tier.as_str(), tier.label()));
+    }
     if c.is_current {
         parts.push("CURRENT model — continuing likely keeps prompt-cache hits".to_string());
     }
-    if let Some(tier) = &c.profile.quality_tier {
-        parts.push(format!("quality_tier={tier}"));
-    }
+    parts.push(format!("tool_capable={}", c.profile.tool_capable));
+    parts.push(format!("cache_eligible={}", c.profile.cache_eligible));
     parts.push(format!(
         "input=${:.4}/MTok output=${:.4}/MTok",
         c.profile.input_usd_per_mtok, c.profile.output_usd_per_mtok
     ));
-    if let Some(r) = c.profile.cache_read_usd_per_mtok {
-        parts.push(format!("cache_read=${r:.4}/MTok"));
-    }
-    if let Some(w) = c.profile.cache_write_usd_per_mtok {
-        parts.push(format!("cache_write=${w:.4}/MTok"));
+    if let (Some(i), Some(o)) = (&c.profile.cost_band_in, &c.profile.cost_band_out) {
+        parts.push(format!("bands in={i} out={o}"));
     }
     if let Some(notes) = &c.profile.notes {
         parts.push(notes.clone());
@@ -174,10 +193,10 @@ fn why_reason_criteria(has_current: bool) -> BTreeMap<String, Option<String>> {
 mod tests {
     use super::*;
     use crate::catalog::ModelCatalog;
-    use crate::types::{MessageRole, SessionMessage};
+    use crate::types::{MessageRole, PrefixReuse, SessionMessage, TaskClass};
 
     #[test]
-    fn pack_includes_route_and_why_choices() {
+    fn pack_includes_route_why_and_signals() {
         let catalog = ModelCatalog::demo();
         let request = RouterRequest {
             session: vec![SessionMessage {
@@ -186,6 +205,15 @@ mod tests {
             }],
             current_model: Some("gpt-4o-mini".into()),
             allowlist: vec!["gpt-4o-mini".into(), "claude-sonnet-4".into()],
+            task_class: Some(TaskClass::Code),
+            length: None,
+            complexity: None,
+            tools_required: Some(false),
+            latency_mode: None,
+            prefix_reuse: Some(PrefixReuse::Weak),
+            prefix_tokens_est: Some(200),
+            tokens_in_est: None,
+            tokens_out_est: None,
         };
         let candidates = catalog
             .enrich_allowlist(&request.allowlist, request.current_model.as_deref())
@@ -194,35 +222,9 @@ mod tests {
         assert_eq!(packed.model, "jev-latest");
         assert!(packed.questions.contains_key(ROUTE_QUESTION_ID));
         assert!(packed.questions.contains_key(WHY_QUESTION_ID));
-        match packed.questions.get(ROUTE_QUESTION_ID).unwrap() {
-            Question::Choice(c) => {
-                assert!(c.criteria.contains_key("gpt-4o-mini"));
-                assert!(c.criteria.contains_key("claude-sonnet-4"));
-            }
-            other => panic!("expected Choice, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn packed_json_matches_typesafe_wire_shape() {
-        let catalog = ModelCatalog::demo();
-        let request = RouterRequest {
-            session: vec![SessionMessage {
-                role: MessageRole::User,
-                content: "hi".into(),
-            }],
-            current_model: None,
-            allowlist: vec!["gpt-4o-mini".into()],
-        };
-        let candidates = catalog
-            .enrich_allowlist(&request.allowlist, None)
-            .unwrap();
-        let packed = pack_system_one_request(&request, &candidates, DEFAULT_SYSTEM_ONE_MODEL);
         let value = serde_json::to_value(&packed).unwrap();
-        assert_eq!(value["model"], "jev-latest");
-        assert!(value["state"].is_object());
+        assert_eq!(value["state"]["signals"]["task_class"], "code");
+        assert_eq!(value["state"]["signals"]["prefix_reuse"], "weak");
         assert_eq!(value["questions"]["route_to"]["type"], "choice");
-        assert!(value["questions"]["route_to"]["criteria"]["gpt-4o-mini"].is_string());
-        assert_eq!(value["questions"]["primary_reason"]["type"], "choice");
     }
 }

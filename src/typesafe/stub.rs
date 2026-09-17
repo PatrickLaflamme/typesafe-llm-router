@@ -1,13 +1,18 @@
 //! Offline stub for compile + tests without network or API keys.
+//!
+//! When not forced, applies lightweight decision-rules heuristics from
+//! `task_class` / `prefix_reuse` so Examples A–E produce inspectable output.
 
 use std::collections::BTreeMap;
+
+use serde_json::Value;
 
 use super::api::{Answer, ChoiceAnswer, Question, SystemOneRequest, SystemOneResponse, Usage};
 use super::TypesafeClient;
 use crate::error::TypesafeError;
 use crate::pack::{ROUTE_QUESTION_ID, WHY_QUESTION_ID};
 
-/// Deterministic stub: prefers `current_model` when present, else first Choice option.
+/// Deterministic stub: heuristics from packed state signals, else first option.
 #[derive(Debug, Default, Clone)]
 pub struct StubTypesafeClient {
     /// Optional forced model id (must appear in the route Choice criteria).
@@ -63,17 +68,10 @@ impl TypesafeClient for StubTypesafeClient {
                 )));
             }
             forced.clone()
-        } else if let Some(cur) = &current {
-            if options.iter().any(|o| o == cur) {
-                cur.clone()
-            } else {
-                options[0].clone()
-            }
         } else {
-            options[0].clone()
+            heuristic_choice(&request.state, &options, current.as_deref())
         };
 
-        // 0.7 on chosen; equal split of the remaining 0.3.
         let remainder = if options.len() == 1 {
             0.0
         } else {
@@ -87,16 +85,28 @@ impl TypesafeClient for StubTypesafeClient {
             );
         }
 
-        let reason = self
-            .force_reason
-            .clone()
-            .unwrap_or_else(|| {
-                if current.as_deref() == Some(chosen.as_str()) {
-                    "continue_current".into()
-                } else {
-                    "cost".into()
-                }
-            });
+        let reason = self.force_reason.clone().unwrap_or_else(|| {
+            if current.as_deref() == Some(chosen.as_str()) {
+                "continue_current".into()
+            } else if request
+                .state
+                .pointer("/signals/prefix_reuse")
+                .and_then(|v| v.as_str())
+                == Some("strong")
+            {
+                "cache".into()
+            } else if matches!(
+                request
+                    .state
+                    .pointer("/signals/task_class")
+                    .and_then(|v| v.as_str()),
+                Some("long-reason" | "tool-use" | "code" | "creative")
+            ) {
+                "quality".into()
+            } else {
+                "cost".into()
+            }
+        });
 
         let why_options = match request.questions.get(WHY_QUESTION_ID) {
             Some(Question::Choice(c)) => c.criteria.keys().cloned().collect::<Vec<_>>(),
@@ -151,4 +161,73 @@ impl TypesafeClient for StubTypesafeClient {
             }),
         })
     }
+}
+
+/// Prefer model ids whose catalog tier (embedded in candidate rows) matches
+/// decision-rules defaults for the given task_class.
+fn heuristic_choice(state: &Value, options: &[String], current: Option<&str>) -> String {
+    let task = state
+        .pointer("/signals/task_class")
+        .and_then(|v| v.as_str());
+    let prefix = state
+        .pointer("/signals/prefix_reuse")
+        .and_then(|v| v.as_str());
+    let tools = state
+        .pointer("/signals/tools_required")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    let preferred_tier = match task {
+        Some("short-classify") => Some("T-small"),
+        Some("code") | Some("creative") => Some("T-mid"),
+        Some("long-reason") | Some("tool-use") => Some("T-frontier"),
+        _ => None,
+    };
+
+    // Strong prefix + current still allowlisted → continue (cache locality).
+    if prefix == Some("strong") {
+        if let Some(cur) = current {
+            if options.iter().any(|o| o == cur) && !matches!(task, Some("long-reason" | "tool-use"))
+            {
+                return cur.to_string();
+            }
+        }
+    }
+
+    if let Some(tier) = preferred_tier {
+        if let Some(id) = first_matching_tier(state, options, tier, tools) {
+            return id;
+        }
+    }
+
+    if let Some(cur) = current {
+        if options.iter().any(|o| o == cur) {
+            return cur.to_string();
+        }
+    }
+    options[0].clone()
+}
+
+fn first_matching_tier(
+    state: &Value,
+    options: &[String],
+    tier: &str,
+    require_tools: bool,
+) -> Option<String> {
+    let candidates = state.get("candidates")?.as_array()?;
+    for opt in options {
+        for row in candidates {
+            if row.get("model_id").and_then(|v| v.as_str()) != Some(opt.as_str()) {
+                continue;
+            }
+            if row.get("tier").and_then(|v| v.as_str()) != Some(tier) {
+                continue;
+            }
+            if require_tools && row.get("tool_capable").and_then(|v| v.as_bool()) != Some(true) {
+                continue;
+            }
+            return Some(opt.clone());
+        }
+    }
+    None
 }

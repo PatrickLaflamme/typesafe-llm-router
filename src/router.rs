@@ -1,9 +1,12 @@
 //! Orchestrates enrich → pack → TypeSafe → map to [`RouterDecision`].
 
-use crate::catalog::ModelCatalog;
+use crate::catalog::{EnrichedCandidate, ModelCatalog, ModelTier};
 use crate::error::RouterError;
 use crate::pack::{self, DEFAULT_SYSTEM_ONE_MODEL, ROUTE_QUESTION_ID, WHY_QUESTION_ID};
-use crate::types::{DecisionReason, RouterDecision, RouterRequest, WhyTradeoff};
+use crate::types::{
+    AlternativeConsidered, CacheHypothesis, DecisionReason, PrefixReuse, RouterDecision,
+    RouterRequest, TaskClass, WhyTradeoff,
+};
 use crate::typesafe::api::Answer;
 use crate::typesafe::TypesafeClient;
 
@@ -43,7 +46,7 @@ impl<'a, C: TypesafeClient> Router<'a, C> {
             .get(ROUTE_QUESTION_ID)
             .ok_or_else(|| RouterError::InvalidDecision("missing route_to answer".into()))?;
 
-        let (model, confidence, probabilities) = match route {
+        let (chosen_model, confidence, probabilities) = match route {
             Answer::Choice(c) => {
                 if !request.allowlist.iter().any(|m| m == &c.choice) {
                     return Err(RouterError::InvalidDecision(format!(
@@ -65,7 +68,7 @@ impl<'a, C: TypesafeClient> Router<'a, C> {
             }
         };
 
-        let primary = response
+        let primary_reason = response
             .answers
             .get(WHY_QUESTION_ID)
             .and_then(|a| match a {
@@ -74,17 +77,42 @@ impl<'a, C: TypesafeClient> Router<'a, C> {
             })
             .unwrap_or(DecisionReason::Unspecified);
 
+        let chosen_profile = candidates
+            .iter()
+            .find(|c| c.model_id == chosen_model)
+            .map(|c| &c.profile);
+
+        let chosen_tier = chosen_profile.and_then(|p| p.tier.map(|t| t.as_str().to_string()));
+
+        let alternatives_considered =
+            build_alternatives(&candidates, &chosen_model, request.tools_required);
+
+        let cache_hypothesis = build_cache_hypothesis(request, chosen_profile.map(|p| p.cache_eligible));
+
+        let rough_cost_note = build_cost_note(request, chosen_profile, &cache_hypothesis);
+
+        let open_risk = build_open_risk(request, chosen_profile.and_then(|p| p.tier));
+
         let summary = build_summary(
-            &model,
+            &chosen_model,
+            chosen_tier.as_deref(),
             request.current_model.as_deref(),
-            primary,
+            primary_reason,
             confidence,
         );
 
         Ok(RouterDecision {
-            model,
+            chosen_model: chosen_model.clone(),
+            chosen_tier,
+            primary_reason,
+            alternatives_considered,
+            cache_hypothesis,
+            rough_cost_note,
+            confidence,
+            open_risk,
+            model: chosen_model,
             why: WhyTradeoff {
-                primary,
+                primary: primary_reason,
                 summary,
                 confidence,
                 probabilities,
@@ -103,8 +131,127 @@ fn map_reason(raw: &str) -> DecisionReason {
     }
 }
 
+fn build_alternatives(
+    candidates: &[EnrichedCandidate],
+    chosen: &str,
+    tools_required: Option<bool>,
+) -> Vec<AlternativeConsidered> {
+    candidates
+        .iter()
+        .filter(|c| c.model_id != chosen)
+        .map(|c| {
+            let tier = c
+                .profile
+                .tier
+                .map(|t| t.as_str())
+                .unwrap_or("unknown-tier");
+            let why_rejected = reject_reason(c, chosen, tools_required);
+            AlternativeConsidered {
+                model_or_tier: format!("{} ({})", c.model_id, tier),
+                why_rejected,
+            }
+        })
+        .collect()
+}
+
+fn reject_reason(c: &EnrichedCandidate, chosen: &str, tools_required: Option<bool>) -> String {
+    if tools_required == Some(true) && !c.profile.tool_capable {
+        return "rejected — not tool_capable".into();
+    }
+    match c.profile.tier {
+        Some(ModelTier::Small) => {
+            "rejected — may under-serve complexity / adherence vs chosen".into()
+        }
+        Some(ModelTier::Frontier) => {
+            format!("rejected — quality margin small vs `{chosen}`; higher cost band (placeholder)")
+        }
+        Some(ModelTier::Mid) => {
+            format!("rejected — `{chosen}` preferred on cost/capability balance (placeholder)")
+        }
+        None => format!("rejected — not selected vs `{chosen}`"),
+    }
+}
+
+fn build_cache_hypothesis(
+    request: &RouterRequest,
+    chosen_cache_eligible: Option<bool>,
+) -> CacheHypothesis {
+    let strength = request.prefix_reuse.unwrap_or(PrefixReuse::None);
+    let mut parts = Vec::new();
+    match strength {
+        PrefixReuse::Strong => parts.push("shared/stable system or tool preamble expected".into()),
+        PrefixReuse::Weak => parts.push("partial or unstable prefix reuse".into()),
+        PrefixReuse::None => parts.push("unique / one-shot prompt; no shared prefix called out".into()),
+    }
+    if let Some(n) = request.prefix_tokens_est {
+        parts.push(format!("prefix_tokens_est≈{n}"));
+    }
+    if let Some(cur) = &request.current_model {
+        parts.push(format!("current_model=`{cur}`"));
+    }
+    match chosen_cache_eligible {
+        Some(true) => parts.push("chosen model is cache_eligible".into()),
+        Some(false) => parts.push("chosen model not cache_eligible".into()),
+        None => {}
+    }
+    CacheHypothesis {
+        strength,
+        rationale: parts.join("; "),
+    }
+}
+
+fn build_cost_note(
+    request: &RouterRequest,
+    profile: Option<&crate::catalog::ModelCostProfile>,
+    cache: &CacheHypothesis,
+) -> String {
+    let tin = request.tokens_in_est.unwrap_or(1500);
+    let tout = request.tokens_out_est.unwrap_or(400);
+    let tier = profile
+        .and_then(|p| p.tier)
+        .map(|t| t.as_str())
+        .unwrap_or("unknown-tier");
+    let band = profile
+        .map(|p| p.band_note())
+        .unwrap_or_else(|| "placeholder band".into());
+    let cache_bit = match cache.strength {
+        PrefixReuse::Strong => "expect prefix cache after warm-up",
+        PrefixReuse::Weak => "weak cache",
+        PrefixReuse::None => "no cache assumed",
+    };
+    format!(
+        "~{} in / {} out @ {tier} ({band}); {cache_bit} (placeholder)",
+        fmt_token_est(tin),
+        fmt_token_est(tout)
+    )
+}
+
+fn fmt_token_est(n: u32) -> String {
+    if n < 100 {
+        format!("{n}")
+    } else {
+        format!("{:.1}K", n as f64 / 1000.0)
+    }
+}
+
+fn build_open_risk(request: &RouterRequest, tier: Option<ModelTier>) -> Option<String> {
+    match (request.task_class, tier) {
+        (Some(TaskClass::LongReason), Some(ModelTier::Mid) | Some(ModelTier::Small)) => {
+            Some("may under-develop failure modes / deep reasoning".into())
+        }
+        (Some(TaskClass::ToolUse), Some(ModelTier::Small)) => {
+            Some("tool schema adherence risk on small tier".into())
+        }
+        (Some(TaskClass::Code), Some(ModelTier::Small)) => {
+            Some("may miss edge cases on non-trivial code".into())
+        }
+        _ => None,
+    }
+}
+
 fn build_summary(
     chosen: &str,
+    tier: Option<&str>,
     current: Option<&str>,
     primary: DecisionReason,
     confidence: Option<f64>,
@@ -112,10 +259,11 @@ fn build_summary(
     let conf = confidence
         .map(|c| format!(" (confidence={c:.2})"))
         .unwrap_or_default();
+    let tier_bit = tier.map(|t| format!(" [{t}]")).unwrap_or_default();
     let switched = match current {
-        Some(cur) if cur == chosen => format!("continue on `{chosen}`"),
-        Some(cur) => format!("switch `{cur}` → `{chosen}`"),
-        None => format!("select `{chosen}`"),
+        Some(cur) if cur == chosen => format!("continue on `{chosen}`{tier_bit}"),
+        Some(cur) => format!("switch `{cur}` → `{chosen}`{tier_bit}"),
+        None => format!("select `{chosen}`{tier_bit}"),
     };
     let axis = match primary {
         DecisionReason::ContinueCurrent => "preserve cache / continuity",
@@ -130,7 +278,9 @@ fn build_summary(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{MessageRole, SessionMessage};
+    use crate::types::{
+        ComplexityHint, LatencyMode, LengthHint, MessageRole, SessionMessage, TaskClass,
+    };
     use crate::StubTypesafeClient;
 
     fn sample_request() -> RouterRequest {
@@ -151,17 +301,32 @@ mod tests {
                 "gpt-4o".into(),
                 "claude-haiku-3.5".into(),
             ],
+            task_class: Some(TaskClass::ShortClassify),
+            length: Some(LengthHint::Short),
+            complexity: Some(ComplexityHint::Simple),
+            tools_required: Some(false),
+            latency_mode: Some(LatencyMode::Batch),
+            prefix_reuse: Some(PrefixReuse::Strong),
+            prefix_tokens_est: Some(400),
+            tokens_in_est: Some(500),
+            tokens_out_est: Some(5),
         }
     }
 
     #[test]
-    fn stub_router_continues_current() {
+    fn stub_router_emits_required_decision_fields() {
         let catalog = ModelCatalog::demo();
         let client = StubTypesafeClient::new();
         let router = Router::new(&catalog, &client);
         let decision = router.route(&sample_request()).unwrap();
-        assert_eq!(decision.model, "gpt-4o-mini");
-        assert_eq!(decision.why.primary, DecisionReason::ContinueCurrent);
+        assert!(!decision.chosen_model.is_empty());
+        assert_eq!(decision.model, decision.chosen_model);
+        assert!(decision.chosen_tier.is_some());
+        assert!(!decision.alternatives_considered.is_empty());
+        assert_eq!(decision.cache_hypothesis.strength, PrefixReuse::Strong);
+        assert!(decision.rough_cost_note.contains("placeholder"));
+        assert!(decision.primary_reason != DecisionReason::Unspecified
+            || decision.why.primary == decision.primary_reason);
     }
 
     #[test]
@@ -170,7 +335,7 @@ mod tests {
         let client = StubTypesafeClient::with_force("claude-haiku-3.5", "cost");
         let router = Router::new(&catalog, &client);
         let decision = router.route(&sample_request()).unwrap();
-        assert_eq!(decision.model, "claude-haiku-3.5");
-        assert_eq!(decision.why.primary, DecisionReason::Cost);
+        assert_eq!(decision.chosen_model, "claude-haiku-3.5");
+        assert_eq!(decision.primary_reason, DecisionReason::Cost);
     }
 }

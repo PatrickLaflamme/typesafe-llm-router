@@ -1,0 +1,23 @@
+{
+  "session": [
+    {
+      "role": "system",
+      "content": "You label support tickets with exactly one of: billing | bug | feature | other. Reply with one label only. Shared classifier preamble used on every ticket (~400 tokens of policy examples omitted here)."
+    },
+    {
+      "role": "user",
+      "content": "I was charged twice for my annual plan and the portal still shows active. Please fix."
+    }
+  ],
+  "current_model": "gpt-4o-mini",
+  "allowlist": ["gpt-4o-mini", "gpt-4o", "claude-haiku-3.5", "claude-sonnet-4"],
+  "task_class": "short-classify",
+  "length": "short",
+  "complexity": "simple",
+  "tools_required": false,
+  "latency_mode": "batch",
+  "prefix_reuse": "strong",
+  "prefix_tokens_est": 400,
+  "tokens_in_est": 500,
+  "tokens_out_est": 5
+}
