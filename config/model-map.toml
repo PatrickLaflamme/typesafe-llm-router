@@ -1,14 +1,14 @@
 # Maps router catalog tiers → Cursor model ids (placeholders until Cursor.models.list).
-# Used by docs / future CursorAgentSdkSource.list_models enrichment.
+# Loaded by CursorAgentSdkSource::list_models.
 
 [tiers.T-small]
 cursor_model_id = "composer-2.5"
-label = "placeholder small/mid map"
+label = "placeholder small→composer (replace after models.list)"
 
 [tiers.T-mid]
 cursor_model_id = "composer-2.5"
-label = "placeholder mid"
+label = "placeholder mid→composer"
 
 [tiers.T-frontier]
 cursor_model_id = "gpt-5"
-label = "placeholder frontier — replace after models.list"
+label = "placeholder frontier — replace after Cursor.models.list"

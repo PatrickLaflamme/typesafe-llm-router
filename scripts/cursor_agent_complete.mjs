@@ -57,8 +57,12 @@ async function main() {
       opts.local = { cwd: req.cwd || process.cwd() };
     }
 
-    const agent = await Agent.create(opts);
+    let agent = await Agent.create(opts);
+    // Design: Agent.create({ apiKey, model:{id}, local:{cwd} }) + send/wait
     const run = await agent.send({ message: req.prompt });
+    if (run && typeof run.wait === "function") {
+      await run.wait();
+    }
     // Best-effort extraction — SDK shapes evolve; keep raw_meta for debugging.
     const model_output =
       (run && (run.result || run.text || run.message || run.output)) ||
@@ -68,7 +72,10 @@ async function main() {
       JSON.stringify({
         model_output: String(model_output),
         run_id: run?.id || run?.runId || null,
-        raw_meta: { note: "cursor_agent_complete.mjs via @cursor/sdk" },
+        raw_meta: {
+          note: "Agent.create({ apiKey, model:{id}, local:{cwd} }) + send/wait",
+          helper: "cursor_agent_complete.mjs",
+        },
       })
     );
   } catch (e) {
