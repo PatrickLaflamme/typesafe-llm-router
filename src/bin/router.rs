@@ -147,7 +147,7 @@ enum OutputFormat {
 enum ModelProviderKind {
     Stub,
     Cursor,
-    /// Databricks Unity AI Gateway (`DATABRICKS_HOST` + `DATABRICKS_TOKEN`).
+    /// Databricks Unity AI Gateway (`databricks auth login` → CLI host/token).
     Databricks,
 }
 
@@ -481,7 +481,7 @@ fn prepare_request_from_provider(
             Ok((catalog, src.name()))
         }
         ModelProviderKind::Databricks => {
-            let src = DatabricksAiGatewayProvider::from_env()?;
+            let src = DatabricksAiGatewayProvider::from_cli()?;
             let models = src.list_models()?;
             let (allowlist, catalog) = allowlist_from_provider(
                 &models,
@@ -535,7 +535,7 @@ fn run_execute<C: typesafe_llm_router::TypesafeClient, Q: ScoreQueue, S: Outcome
             )?)
         }
         ModelProviderKind::Databricks => {
-            let src = DatabricksAiGatewayProvider::from_env()?;
+            let src = DatabricksAiGatewayProvider::from_cli()?;
             if log {
                 log_step(&format!("ModelProvider.complete ({})", src.name()));
             }

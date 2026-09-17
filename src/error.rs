@@ -58,8 +58,14 @@ pub enum ModelProviderError {
     #[error("Cursor agent helper failed: {0}")]
     CursorHelper(String),
 
-    #[error("missing Databricks credentials: set DATABRICKS_HOST and DATABRICKS_TOKEN")]
+    #[error(
+        "missing Databricks CLI auth — run `databricks auth login` \
+         (optional profile via DATABRICKS_CONFIG_PROFILE)"
+    )]
     MissingDatabricksCredentials,
+
+    #[error("Databricks CLI error: {0}")]
+    DatabricksCli(String),
 
     #[error("Databricks AI Gateway HTTP error: {0}")]
     DatabricksHttp(String),

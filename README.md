@@ -53,8 +53,8 @@ GitHub Actions: `.github/workflows/ci.yml` runs fmt, clippy, unit, integration, 
 | `TYPESAFE_API_KEY` | Live Choice / Score |
 | `TYPESAFE_BASE_URL` | Optional |
 | `CURSOR_API_KEY` | Live Cursor ModelProvider (`--model-provider cursor`) |
-| `DATABRICKS_HOST` | Workspace URL for AI Gateway |
-| `DATABRICKS_TOKEN` | Token for `--model-provider databricks` |
+| `DATABRICKS_CONFIG_PROFILE` | Optional CLI profile after `databricks auth login` |
+| `DATABRICKS_CLI` | Optional path to `databricks` binary |
 
 ## Types
 

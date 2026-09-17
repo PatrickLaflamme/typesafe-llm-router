@@ -62,7 +62,7 @@ demos keep the label instruction. Chat-style providers (Databricks) prefer `mess
 | --- | --- | --- |
 | **StubModelProvider** | `src/model_provider/stub.rs` | Fixture text, **no network**; Cursor-style ids + **obvious fixture** $/MTok |
 | **CursorAgentSdkSource** | `src/model_provider/cursor_agent.rs` | Node sidecar → `@cursor/sdk` **`Agent.prompt`**; auth: **`CURSOR_API_KEY` only** |
-| **DatabricksAiGatewayProvider** | `src/model_provider/databricks_ai_gateway.rs` | Unity AI Gateway OpenAI-compatible chat completions; auth: **`DATABRICKS_HOST` + `DATABRICKS_TOKEN`** |
+| **DatabricksAiGatewayProvider** | `src/model_provider/databricks_ai_gateway.rs` | Unity AI Gateway chat completions; auth via **Databricks CLI** (`databricks auth login` → host from `auth env`, token+expiry from `auth token`) |
 
 ### Cursor pricing snapshot (USD / 1M tokens)
 
@@ -89,6 +89,20 @@ unless latency SLA forces fast.
 | **Model service** (default) | Databricks-hosted / unified FQNs | `{HOST}/ai-gateway/mlflow/v1/chat/completions` |
 | **Model provider service** | External provider via UC service | `{HOST}/ai-gateway/openai/v1/chat/completions` + header `Databricks-Model-Provider-Service` |
 
+**Auth (CLI):**
+
+```bash
+databricks auth login --host https://<workspace-url>
+# optional: databricks auth login --host … --profile lab
+```
+
+At runtime the provider shells out to:
+
+| CLI command | Provides |
+| --- | --- |
+| `databricks auth env` | `DATABRICKS_HOST` |
+| `databricks auth token` | `access_token` + `expiry` (refreshed when close to expiry) |
+
 Default catalog ids (illustrative $/MTok for Choice notes):
 
 | id | tier_hint |
@@ -100,7 +114,7 @@ Default catalog ids (illustrative $/MTok for Choice notes):
 Override with `DATABRICKS_AI_GATEWAY_MODELS` (JSON `ModelInfo[]` or comma-separated FQNs).
 
 Docs: [query model services](https://docs.databricks.com/aws/en/ai-gateway/query-model-services),
-[query model provider services](https://docs.databricks.com/aws/en/ai-gateway/query-model-provider-services).
+[auth commands](https://docs.databricks.com/aws/en/dev-tools/cli/reference/auth-commands).
 
 Legacy `config/model-map.toml` tier→Cursor remap is **not** the source of truth (optional
 `tier_hint` only). Optional `config/models.example.toml` is for route-only / paper demos
@@ -112,8 +126,8 @@ without a ModelProvider.
 | --- | --- |
 | `CURSOR_API_KEY` | Cursor Agent SDK / sidecar |
 | `CURSOR_AGENT_HELPER` | Override helper script path |
-| `DATABRICKS_HOST` | Workspace URL (`https://adb-….azuredatabricks.net`) |
-| `DATABRICKS_TOKEN` | PAT / OAuth token for AI Gateway |
+| `DATABRICKS_CONFIG_PROFILE` | Optional CLI profile (`-p`) after `databricks auth login` |
+| `DATABRICKS_CLI` | Optional path to `databricks` binary |
 | `DATABRICKS_AI_GATEWAY_MODELS` | Optional model catalog override |
 | `DATABRICKS_MODEL_PROVIDER_SERVICE` | Optional UC provider-service name (switches to OpenAI path) |
 | `TYPESAFE_API_KEY` | System One Choice / Score (separate) |
@@ -130,7 +144,8 @@ cargo run -- route --session examples/a_e/b_short_classify.json --stub --execute
 # Live Cursor ModelProvider (requires CURSOR_API_KEY + npm i @cursor/sdk)
 cargo run -- route --session examples/a_e/b_short_classify.json --model-provider cursor --execute
 
-# Live Databricks AI Gateway (requires DATABRICKS_HOST + DATABRICKS_TOKEN)
+# Live Databricks AI Gateway (requires Databricks CLI login)
+#   databricks auth login --host https://<workspace-url>
 cargo run -- route --session examples/a_e/b_short_classify.json --model-provider databricks --execute
 ```
 

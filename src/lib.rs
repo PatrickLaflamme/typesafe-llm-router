@@ -24,11 +24,13 @@ pub use catalog::{ModelCatalog, ModelCostProfile, ModelTier};
 pub use error::{ModelProviderError, RouterError, TypesafeError};
 pub use model_provider::{
     allowlist_from_provider, chat_messages_from_request, complete_request_from_session,
-    default_databricks_catalog, format_session_prompt, ChatCompletionsRequest, ChatMessage,
-    CompleteRequest, CompleteResponse, CursorAgentSdkSource, DatabricksAiGatewayProvider,
+    default_databricks_catalog, format_session_prompt, load_credentials_from_cli,
+    ChatCompletionsRequest, ChatMessage, CompleteRequest, CompleteResponse, CursorAgentSdkSource,
+    DatabricksAiGatewayProvider, DatabricksCliCredentials, DatabricksCliRunner,
     DatabricksGatewayPath, DatabricksGatewayTransport, ModelInfo, ModelProvider,
-    ModelProviderRequest, ModelProviderResult, ModelRuntime, ReqwestDatabricksTransport,
-    StubModelProvider, UsageMeta, CURSOR_API_KEY_ENV, CURSOR_HELPER_ENV, DATABRICKS_HOST_ENV,
+    ModelProviderRequest, ModelProviderResult, ModelRuntime, ProcessDatabricksCli,
+    ReqwestDatabricksTransport, StubModelProvider, UsageMeta, CURSOR_API_KEY_ENV,
+    CURSOR_HELPER_ENV, DATABRICKS_CLI_ENV, DATABRICKS_CONFIG_PROFILE_ENV, DATABRICKS_HOST_ENV,
     DATABRICKS_MODELS_ENV, DATABRICKS_MODEL_PROVIDER_SERVICE_ENV, DATABRICKS_TOKEN_ENV,
 };
 pub use router::Router;

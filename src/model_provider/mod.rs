@@ -19,10 +19,12 @@ mod stub;
 
 pub use cursor_agent::{CursorAgentSdkSource, CURSOR_API_KEY_ENV, CURSOR_HELPER_ENV};
 pub use databricks_ai_gateway::{
-    chat_messages_from_request, default_databricks_catalog, ChatCompletionsRequest, ChatMessage,
-    DatabricksAiGatewayProvider, DatabricksGatewayPath, DatabricksGatewayTransport,
-    ReqwestDatabricksTransport, DATABRICKS_HOST_ENV, DATABRICKS_MODELS_ENV,
-    DATABRICKS_MODEL_PROVIDER_SERVICE_ENV, DATABRICKS_TOKEN_ENV,
+    chat_messages_from_request, default_databricks_catalog, load_credentials_from_cli,
+    ChatCompletionsRequest, ChatMessage, DatabricksAiGatewayProvider, DatabricksCliCredentials,
+    DatabricksCliRunner, DatabricksGatewayPath, DatabricksGatewayTransport, ProcessDatabricksCli,
+    ReqwestDatabricksTransport, DATABRICKS_CLI_ENV, DATABRICKS_CONFIG_PROFILE_ENV,
+    DATABRICKS_HOST_ENV, DATABRICKS_MODELS_ENV, DATABRICKS_MODEL_PROVIDER_SERVICE_ENV,
+    DATABRICKS_TOKEN_ENV,
 };
 pub use stub::StubModelProvider;
 
