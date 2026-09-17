@@ -17,8 +17,7 @@
       "content": "Given that, should we stay on the current model for a short follow-up, or switch to something cheaper?"
     }
   ],
-  "current_model": "gpt-4o-mini",
-  "allowlist": ["gpt-4o-mini", "gpt-4o", "claude-haiku-3.5", "claude-sonnet-4"],
+  "current_model": "composer-2.5",
   "task_class": "code",
   "length": "short",
   "complexity": "simple",

@@ -329,7 +329,7 @@ mod tests {
             outcome_id: "o1".into(),
             typesafe_model: "jev-latest".into(),
             incoming_prompt: "hi".into(),
-            chosen_model: "gpt-4o-mini".into(),
+            chosen_model: "composer-2.5".into(),
             model_output: "hello".into(),
             task_class: None,
             decision,
@@ -351,7 +351,7 @@ mod tests {
             CacheHypothesis, DecisionReason, PrefixReuse, WhyTradeoff,
         };
         RouterDecision {
-            chosen_model: "gpt-4o-mini".into(),
+            chosen_model: "composer-2.5".into(),
             chosen_tier: Some("T-small".into()),
             primary_reason: DecisionReason::Cost,
             alternatives_considered: vec![],
@@ -362,7 +362,7 @@ mod tests {
             rough_cost_note: "placeholder".into(),
             confidence: Some(0.5),
             open_risk: None,
-            model: "gpt-4o-mini".into(),
+            model: "composer-2.5".into(),
             why: WhyTradeoff {
                 primary: DecisionReason::Cost,
                 summary: "test".into(),

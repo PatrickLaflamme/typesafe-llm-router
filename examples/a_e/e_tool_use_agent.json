@@ -9,8 +9,7 @@
       "content": "Find why CI fails on auth.test.ts and propose a patch."
     }
   ],
-  "current_model": "claude-sonnet-4",
-  "allowlist": ["gpt-4o-mini", "gpt-4o", "claude-haiku-3.5", "claude-sonnet-4"],
+  "current_model": "grok-4.5",
   "task_class": "tool-use",
   "length": "long",
   "complexity": "hard",

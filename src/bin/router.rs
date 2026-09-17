@@ -1,4 +1,8 @@
 //! CLI: route, demo (morning recording), drain-score-queue.
+//!
+//! When `--model-source` is set (or implied by `--execute` / `demo`), Choice
+//! allowlist + prices come from `ModelSource.list_models()` — no separate
+//! gpt-4o-mini catalog remap.
 
 use std::fs;
 use std::path::PathBuf;
@@ -7,10 +11,11 @@ use std::process::ExitCode;
 use clap::{Parser, Subcommand, ValueEnum};
 use typesafe_llm_router::typesafe::{API_KEY_ENV, BASE_URL_ENV};
 use typesafe_llm_router::{
-    complete_request_from_session, complete_turn_hot_path, complete_turn_with_model_source,
-    drain_score_queue, score_inline_lab_only, ClientMode, FileOutcomeStore, FileScoreQueue,
-    HttpTypesafeClient, ModelCatalog, ModelSource, OutcomeStore, Router, RouterRequest,
-    ScoreQueue, ScoresStatus, StubModelSource, StubTypesafeClient,
+    allowlist_from_source, complete_request_from_session, complete_turn_hot_path,
+    complete_turn_with_model_source, drain_score_queue, score_inline_lab_only, ClientMode,
+    CursorAgentSdkSource, FileOutcomeStore, FileScoreQueue, HttpTypesafeClient, ModelCatalog,
+    ModelSource, OutcomeStore, Router, RouterRequest, ScoreQueue, ScoresStatus, StubModelSource,
+    StubTypesafeClient,
 };
 
 #[derive(Parser, Debug)]
@@ -32,7 +37,11 @@ enum Commands {
         #[arg(short, long)]
         session: PathBuf,
 
-        /// Offline Typesafe + Stub ModelSource (default for recording).
+        /// ModelSource backend (default: stub).
+        #[arg(long, value_enum, default_value_t = ModelSourceKind::Stub)]
+        model_source: ModelSourceKind,
+
+        /// Offline Typesafe stub (default for recording).
         #[arg(long, default_value_t = true)]
         stub: bool,
 
@@ -60,6 +69,10 @@ enum Commands {
         #[arg(short, long)]
         current: Option<String>,
 
+        /// ModelSource for `--execute` (and to fill allowlist from list_models).
+        #[arg(long, value_enum)]
+        model_source: Option<ModelSourceKind>,
+
         #[arg(long)]
         catalog: Option<PathBuf>,
 
@@ -72,7 +85,7 @@ enum Commands {
         #[arg(long)]
         live: bool,
 
-        /// After Choice, run Stub ModelSource.complete (visible model_output).
+        /// After Choice, run ModelSource.complete (visible model_output).
         #[arg(long)]
         execute: bool,
 
@@ -124,6 +137,12 @@ enum OutputFormat {
     Json,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum ModelSourceKind {
+    Stub,
+    Cursor,
+}
+
 fn main() -> ExitCode {
     if let Err(e) = run() {
         eprintln!("error: {e}");
@@ -137,17 +156,26 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     match cli.command {
         Commands::Demo {
             session,
+            model_source,
             stub: _,
             catalog,
             system_one_model,
             outcomes_dir,
             score_queue_dir,
-        } => run_demo(session, catalog, system_one_model, outcomes_dir, score_queue_dir),
+        } => run_demo(
+            session,
+            model_source,
+            catalog,
+            system_one_model,
+            outcomes_dir,
+            score_queue_dir,
+        ),
 
         Commands::Route {
             session,
             allowlist,
             current,
+            model_source,
             catalog,
             system_one_model,
             stub,
@@ -161,9 +189,42 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             score_inline,
             format,
         } => {
-            let request = load_request(&session, allowlist, current)?;
-            let catalog = load_catalog(catalog)?;
+            let mut request = load_request(&session, allowlist, current)?;
             let (use_stub, client_mode) = resolve_client_mode(stub, live)?;
+
+            // --execute implies a ModelSource; default stub when omitted.
+            let source_kind = if execute || model_output.is_some() {
+                Some(model_source.unwrap_or(ModelSourceKind::Stub))
+            } else {
+                model_source
+            };
+
+            let (catalog, source_label) = if let Some(kind) = source_kind {
+                let (cat, label) = prepare_request_from_source(kind, &mut request)?;
+                // Optional TOML override only if caller forced --catalog without source prices.
+                let cat = if let Some(path) = catalog {
+                    eprintln!(
+                        "note: --catalog overrides ModelSource prices; prefer list_models prices"
+                    );
+                    ModelCatalog::from_toml_file(path)?
+                } else {
+                    cat
+                };
+                (cat, Some(label))
+            } else {
+                let cat = load_catalog(catalog)?;
+                if request.allowlist.is_empty() {
+                    request.allowlist = cat.models.keys().cloned().collect();
+                }
+                (cat, None)
+            };
+
+            if request.allowlist.is_empty() {
+                return Err(
+                    "allowlist is empty — pass --allowlist, --model-source, or use demo catalog"
+                        .into(),
+                );
+            }
 
             if execute || model_output.is_some() {
                 if verbose || execute {
@@ -171,9 +232,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 let queue = FileScoreQueue::open(&score_queue_dir)?;
                 let store = FileOutcomeStore::open(&outcomes_dir)?;
-                let client = StubTypesafeClient::new();
-                // Live Typesafe only when not stubbing the decision client.
+                let kind = source_kind.unwrap_or(ModelSourceKind::Stub);
+
                 if use_stub {
+                    let client = StubTypesafeClient::new();
                     let router =
                         Router::new(&catalog, &client).with_system_one_model(&system_one_model);
                     let hot = if let Some(path) = model_output {
@@ -192,20 +254,21 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             &store,
                         )?
                     } else {
-                        log_step("enrich allowlist + cost/cache catalog");
+                        log_step("ModelSource.list_models → Choice allowlist + prices");
                         log_step("Choice route via StubTypesafeClient (jev-latest questions)");
-                        let src = StubModelSource::with_task_class(request.task_class);
-                        log_step(&format!("ModelSource.complete ({})", src.name()));
-                        let hot = complete_turn_with_model_source(
+                        let hot = run_execute(
                             &router,
                             &request,
-                            &src,
+                            kind,
                             client_mode,
                             &queue,
                             &store,
-                            None,
+                            verbose || execute,
                         )?;
-                        log_step(&format!("chosen_model = {}", hot.decision.chosen_model));
+                        log_step(&format!(
+                            "chosen_model = {} (= ModelSource.complete model_id)",
+                            hot.decision.chosen_model
+                        ));
                         hot
                     };
                     log_step(&format!(
@@ -245,19 +308,19 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     let http = HttpTypesafeClient::from_env()?;
                     let router =
                         Router::new(&catalog, &http).with_system_one_model(&system_one_model);
-                    let src = StubModelSource::with_task_class(request.task_class);
-                    let hot = complete_turn_with_model_source(
+                    let hot = run_execute(
                         &router,
                         &request,
-                        &src,
+                        kind,
                         client_mode,
                         &queue,
                         &store,
-                        None,
+                        verbose,
                     )?;
                     print_json(&hot.outcome, format)?;
                 }
             } else {
+                let _ = source_label;
                 let decision = if use_stub {
                     let client = StubTypesafeClient::new();
                     Router::new(&catalog, &client)
@@ -298,13 +361,20 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 fn run_demo(
     session: PathBuf,
+    model_source: ModelSourceKind,
     catalog: Option<PathBuf>,
     system_one_model: String,
     outcomes_dir: PathBuf,
     score_queue_dir: PathBuf,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let request = load_request(&session, None, None)?;
-    let catalog = load_catalog(catalog)?;
+    let mut request = load_request(&session, None, None)?;
+    let (catalog_from_src, src_name) = prepare_request_from_source(model_source, &mut request)?;
+    let catalog = if let Some(path) = catalog {
+        eprintln!("note: --catalog overrides ModelSource prices; prefer list_models prices");
+        ModelCatalog::from_toml_file(path)?
+    } else {
+        catalog_from_src
+    };
 
     println!("========================================");
     println!("  typesafe-llm-router — morning demo");
@@ -313,27 +383,29 @@ fn run_demo(
     print_input_section(&request);
 
     println!("=== PROCESS ===");
-    log_step("load catalog + enrich allowlist (cost/cache/tier)");
+    log_step(&format!(
+        "ModelSource.list_models ({src_name}) → Choice allowlist + $/MTok"
+    ));
     log_step("System One Choice route (StubTypesafeClient / jev-latest shape)");
 
     let client = StubTypesafeClient::new();
     let router = Router::new(&catalog, &client).with_system_one_model(&system_one_model);
     let queue = FileScoreQueue::open(&score_queue_dir)?;
     let store = FileOutcomeStore::open(&outcomes_dir)?;
-    let src = StubModelSource::with_task_class(request.task_class);
 
-    // Show what we would send to ModelSource after Choice.
     let _preview = complete_request_from_session("pending", &request.session, None);
-    log_step(&format!("ModelSource = {} (offline fixture text)", src.name()));
+    log_step(&format!(
+        "ModelSource = {src_name} (chosen_model id == complete model_id)"
+    ));
 
-    let hot = complete_turn_with_model_source(
+    let hot = run_execute(
         &router,
         &request,
-        &src,
+        model_source,
         ClientMode::Stub,
         &queue,
         &store,
-        None,
+        true,
     )?;
 
     log_step(&format!(
@@ -371,6 +443,73 @@ fn run_demo(
     println!();
 
     Ok(())
+}
+
+fn prepare_request_from_source(
+    kind: ModelSourceKind,
+    request: &mut RouterRequest,
+) -> Result<(ModelCatalog, &'static str), Box<dyn std::error::Error>> {
+    match kind {
+        ModelSourceKind::Stub => {
+            let src = StubModelSource::with_task_class(request.task_class);
+            let models = src.list_models()?;
+            let (allowlist, catalog) =
+                allowlist_from_source(&models, &request.allowlist, request.current_model.as_deref())?;
+            request.allowlist = allowlist;
+            Ok((catalog, src.name()))
+        }
+        ModelSourceKind::Cursor => {
+            let src = CursorAgentSdkSource::from_env();
+            let models = src.list_models()?;
+            let (allowlist, catalog) =
+                allowlist_from_source(&models, &request.allowlist, request.current_model.as_deref())?;
+            request.allowlist = allowlist;
+            Ok((catalog, src.name()))
+        }
+    }
+}
+
+fn run_execute<C: typesafe_llm_router::TypesafeClient, Q: ScoreQueue, S: OutcomeStore>(
+    router: &Router<'_, C>,
+    request: &RouterRequest,
+    kind: ModelSourceKind,
+    client_mode: ClientMode,
+    queue: &Q,
+    store: &S,
+    log: bool,
+) -> Result<typesafe_llm_router::HotPathResult, Box<dyn std::error::Error>> {
+    match kind {
+        ModelSourceKind::Stub => {
+            let src = StubModelSource::with_task_class(request.task_class);
+            if log {
+                log_step(&format!("ModelSource.complete ({})", src.name()));
+            }
+            Ok(complete_turn_with_model_source(
+                router,
+                request,
+                &src,
+                client_mode,
+                queue,
+                store,
+                None,
+            )?)
+        }
+        ModelSourceKind::Cursor => {
+            let src = CursorAgentSdkSource::from_env();
+            if log {
+                log_step(&format!("ModelSource.complete ({})", src.name()));
+            }
+            Ok(complete_turn_with_model_source(
+                router,
+                request,
+                &src,
+                client_mode,
+                queue,
+                store,
+                None,
+            )?)
+        }
+    }
 }
 
 fn print_input_section(request: &RouterRequest) {
@@ -427,9 +566,6 @@ fn load_request(
     }
     if let Some(cur) = current {
         request.current_model = Some(cur);
-    }
-    if request.allowlist.is_empty() {
-        return Err("allowlist is empty".into());
     }
     Ok(request)
 }

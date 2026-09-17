@@ -1,4 +1,7 @@
 //! Offline model execution for A–E fixtures and morning demo.
+//!
+//! Stub ids match Cursor ModelSource ids so Choice allowlist == execute id
+//! (Patrick lock 2026-09-17). Prices are obvious fixture rates, not live quotes.
 
 use super::{CompleteRequest, CompleteResponse, ModelInfo, ModelSource, UsageMeta};
 use crate::catalog::ModelTier;
@@ -28,21 +31,61 @@ impl ModelSource for StubModelSource {
     }
 
     fn list_models(&self) -> Result<Vec<ModelInfo>, ModelSourceError> {
+        // Obvious fixture USD/MTok — not Cursor live rates (see CursorAgentSdkSource).
         Ok(vec![
             ModelInfo {
-                id: "gpt-4o-mini".into(),
-                label: Some("stub small".into()),
-                tier: Some(ModelTier::Small),
+                id: "composer-2.5".into(),
+                label: Some("stub fixture · cheap / cache-friendly".into()),
+                price_input_per_mtok: 1.0,
+                price_output_per_mtok: 2.0,
+                price_cache_read_per_mtok: Some(0.1),
+                price_cache_write_per_mtok: Some(0.5),
+                tier_hint: Some(ModelTier::Small),
             },
             ModelInfo {
-                id: "gpt-4o".into(),
-                label: Some("stub mid".into()),
-                tier: Some(ModelTier::Mid),
+                id: "composer-2.5-fast".into(),
+                label: Some("stub fixture · fast small".into()),
+                price_input_per_mtok: 5.0,
+                price_output_per_mtok: 10.0,
+                price_cache_read_per_mtok: Some(1.0),
+                price_cache_write_per_mtok: None,
+                tier_hint: Some(ModelTier::Small),
             },
             ModelInfo {
-                id: "claude-sonnet-4".into(),
-                label: Some("stub frontier".into()),
-                tier: Some(ModelTier::Frontier),
+                id: "grok-4.6".into(),
+                label: Some("stub fixture · mid".into()),
+                price_input_per_mtok: 3.0,
+                price_output_per_mtok: 8.0,
+                price_cache_read_per_mtok: Some(0.5),
+                price_cache_write_per_mtok: None,
+                tier_hint: Some(ModelTier::Mid),
+            },
+            ModelInfo {
+                id: "grok-4.6-fast".into(),
+                label: Some("stub fixture · fast mid".into()),
+                price_input_per_mtok: 6.0,
+                price_output_per_mtok: 16.0,
+                price_cache_read_per_mtok: Some(1.5),
+                price_cache_write_per_mtok: None,
+                tier_hint: Some(ModelTier::Mid),
+            },
+            ModelInfo {
+                id: "grok-4.5".into(),
+                label: Some("stub fixture · frontier-ish".into()),
+                price_input_per_mtok: 4.0,
+                price_output_per_mtok: 12.0,
+                price_cache_read_per_mtok: Some(0.5),
+                price_cache_write_per_mtok: None,
+                tier_hint: Some(ModelTier::Frontier),
+            },
+            ModelInfo {
+                id: "grok-4.5-fast".into(),
+                label: Some("stub fixture · fast frontier".into()),
+                price_input_per_mtok: 8.0,
+                price_output_per_mtok: 24.0,
+                price_cache_read_per_mtok: Some(2.0),
+                price_cache_write_per_mtok: None,
+                tier_hint: Some(ModelTier::Frontier),
             },
         ])
     }
@@ -108,8 +151,8 @@ mod tests {
         let src = StubModelSource::with_task_class(Some(TaskClass::ShortClassify));
         let out = src
             .complete(&CompleteRequest {
-                model_id: "gpt-4o-mini".into(),
-                prompt: "label ticket".into(),
+                model_id: "composer-2.5".into(),
+                prompt: "[system]\nlabel\n\n[user]\nticket".into(),
                 messages: None,
                 cwd: None,
                 runtime: Default::default(),
@@ -120,5 +163,16 @@ mod tests {
             .unwrap();
         assert_eq!(out.model_output, "billing");
         assert_eq!(out.source, "stub");
+        assert_eq!(out.model_id, "composer-2.5");
+    }
+
+    #[test]
+    fn list_models_uses_source_ids_with_fixture_prices() {
+        let models = StubModelSource::new().list_models().unwrap();
+        assert!(models.iter().any(|m| m.id == "composer-2.5"));
+        assert!(models.iter().any(|m| m.id == "grok-4.6"));
+        let cheap = models.iter().find(|m| m.id == "composer-2.5").unwrap();
+        assert_eq!(cheap.price_input_per_mtok, 1.0);
+        assert!(cheap.price_cache_read_per_mtok.is_some());
     }
 }

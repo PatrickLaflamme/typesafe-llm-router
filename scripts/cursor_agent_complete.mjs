@@ -5,6 +5,10 @@
  * JSON stdin → { api_key, chosen_model, prompt, cwd?, runtime? }
  * JSON stdout → { model_output, run_id?, input_tokens?, output_tokens?, raw_meta?, error? }
  *
+ * Uses Agent.prompt (one-shot), not a broken Agent.create shape.
+ * `prompt` should be the full session (system + user) so classify demos
+ * keep the label instruction.
+ *
  * Requires: npm i @cursor/sdk  (and CURSOR_API_KEY in the environment / payload)
  * Docs: https://cursor.com/docs/api/sdk/typescript
  *
@@ -57,24 +61,21 @@ async function main() {
       opts.local = { cwd: req.cwd || process.cwd() };
     }
 
-    let agent = await Agent.create(opts);
-    // Design: Agent.create({ apiKey, model:{id}, local:{cwd} }) + send/wait
-    const run = await agent.send({ message: req.prompt });
-    if (run && typeof run.wait === "function") {
-      await run.wait();
-    }
-    // Best-effort extraction — SDK shapes evolve; keep raw_meta for debugging.
+    // One-shot: create + send + wait + dispose.
+    const result = await Agent.prompt(req.prompt, opts);
     const model_output =
-      (run && (run.result || run.text || run.message || run.output)) ||
-      JSON.stringify(run ?? {});
+      (result && (result.result || result.text || result.message || result.output)) ||
+      JSON.stringify(result ?? {});
 
     console.log(
       JSON.stringify({
         model_output: String(model_output),
-        run_id: run?.id || run?.runId || null,
+        run_id: result?.id || result?.runId || null,
         raw_meta: {
-          note: "Agent.create({ apiKey, model:{id}, local:{cwd} }) + send/wait",
+          note: "Agent.prompt(message, { apiKey, model:{id}, local:{cwd} })",
           helper: "cursor_agent_complete.mjs",
+          status: result?.status ?? null,
+          durationMs: result?.durationMs ?? null,
         },
       })
     );

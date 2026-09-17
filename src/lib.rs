@@ -1,12 +1,14 @@
 //! Smart LLM session router powered by TypeSafe System One.
 //!
 //! Local work (allowlist filtering, cost/cache enrichment, prompt packing) is
-//! cheap. Hot-path latency = Choice route (+ local I/O). **Score is async** and
-//! must never block the response — see [`score_queue`] and
+//! cheap. Hot-path latency = Choice route (+ local I/O) + ModelSource execute.
+//! **Score is async** and must never block the response — see [`score_queue`] and
 //! `docs/score-feedback-loop.md`.
 //!
-//! Paper policy: `docs/decision-rules.md`.
-//! Concrete ids/rates: `config/models.example.toml` / [`ModelCatalog`].
+//! **Patrick lock (2026-09-17):** Choice allowlist + prices come from
+//! [`ModelSource::list_models`]. `RouterDecision.chosen_model` is the execute id.
+//!
+//! Paper policy: `docs/decision-rules.md`. ModelSource design: `docs/model-source.md`.
 
 pub mod catalog;
 pub mod error;
@@ -21,9 +23,10 @@ pub mod typesafe;
 pub use catalog::{ModelCatalog, ModelCostProfile, ModelTier};
 pub use error::{ModelSourceError, RouterError, TypesafeError};
 pub use model_source::{
-    complete_request_from_session, CompleteRequest, CompleteResponse, CursorAgentSdkSource,
-    ModelInfo, ModelRuntime, ModelSource, ModelSourceRequest, ModelSourceResult, StubModelSource,
-    UsageMeta, CURSOR_API_KEY_ENV, CURSOR_HELPER_ENV,
+    allowlist_from_source, complete_request_from_session, format_session_prompt, CompleteRequest,
+    CompleteResponse, CursorAgentSdkSource, ModelInfo, ModelRuntime, ModelSource,
+    ModelSourceRequest, ModelSourceResult, StubModelSource, UsageMeta, CURSOR_API_KEY_ENV,
+    CURSOR_HELPER_ENV,
 };
 pub use router::Router;
 pub use score::{

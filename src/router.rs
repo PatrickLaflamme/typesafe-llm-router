@@ -214,13 +214,17 @@ fn build_cost_note(
     let band = profile
         .map(|p| p.band_note())
         .unwrap_or_else(|| "placeholder band".into());
+    let cache_rate = profile
+        .and_then(|p| p.cache_read_usd_per_mtok)
+        .map(|r| format!("; cache_read=${r:.2}/MTok"))
+        .unwrap_or_default();
     let cache_bit = match cache.strength {
         PrefixReuse::Strong => "expect prefix cache after warm-up",
         PrefixReuse::Weak => "weak cache",
         PrefixReuse::None => "no cache assumed",
     };
     format!(
-        "~{} in / {} out @ {tier} ({band}); {cache_bit} (placeholder)",
+        "~{} in / {} out @ {tier} ({band}{cache_rate}); {cache_bit}",
         fmt_token_est(tin),
         fmt_token_est(tout)
     )
@@ -295,11 +299,11 @@ mod tests {
                     content: "What is the capital of France?".into(),
                 },
             ],
-            current_model: Some("gpt-4o-mini".into()),
+            current_model: Some("composer-2.5".into()),
             allowlist: vec![
-                "gpt-4o-mini".into(),
-                "gpt-4o".into(),
-                "claude-haiku-3.5".into(),
+                "composer-2.5".into(),
+                "grok-4.6".into(),
+                "composer-2.5-fast".into(),
             ],
             task_class: Some(TaskClass::ShortClassify),
             length: Some(LengthHint::Short),
@@ -324,7 +328,7 @@ mod tests {
         assert!(decision.chosen_tier.is_some());
         assert!(!decision.alternatives_considered.is_empty());
         assert_eq!(decision.cache_hypothesis.strength, PrefixReuse::Strong);
-        assert!(decision.rough_cost_note.contains("placeholder"));
+        assert!(decision.rough_cost_note.contains("cache_read"));
         assert!(decision.primary_reason != DecisionReason::Unspecified
             || decision.why.primary == decision.primary_reason);
     }
@@ -332,10 +336,10 @@ mod tests {
     #[test]
     fn stub_router_can_force_switch() {
         let catalog = ModelCatalog::demo();
-        let client = StubTypesafeClient::with_force("claude-haiku-3.5", "cost");
+        let client = StubTypesafeClient::with_force("composer-2.5-fast", "cost");
         let router = Router::new(&catalog, &client);
         let decision = router.route(&sample_request()).unwrap();
-        assert_eq!(decision.chosen_model, "claude-haiku-3.5");
+        assert_eq!(decision.chosen_model, "composer-2.5-fast");
         assert_eq!(decision.primary_reason, DecisionReason::Cost);
     }
 }

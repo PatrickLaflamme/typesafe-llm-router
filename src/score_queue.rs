@@ -383,7 +383,7 @@ mod tests {
                 content: "label this: billing".into(),
             }],
             current_model: None,
-            allowlist: vec!["gpt-4o-mini".into(), "gpt-4o".into()],
+            allowlist: vec!["composer-2.5".into(), "grok-4.6".into()],
             task_class: Some(TaskClass::ShortClassify),
             length: None,
             complexity: None,
@@ -420,5 +420,59 @@ mod tests {
             .unwrap()
             .instruction_follow
             .is_some());
+    }
+
+    #[test]
+    fn chosen_model_equals_model_source_complete_id() {
+        use crate::model_source::{StubModelSource, ModelSource};
+        use crate::types::{MessageRole, SessionMessage, TaskClass, PrefixReuse};
+
+        let src = StubModelSource::with_task_class(Some(TaskClass::ShortClassify));
+        let models = src.list_models().unwrap();
+        let catalog = ModelCatalog::from_model_infos(&models);
+        let client = StubTypesafeClient::new();
+        let router = Router::new(&catalog, &client);
+        let request = RouterRequest {
+            session: vec![
+                SessionMessage {
+                    role: MessageRole::System,
+                    content: "Reply with one label only.".into(),
+                },
+                SessionMessage {
+                    role: MessageRole::User,
+                    content: "I was charged twice.".into(),
+                },
+            ],
+            current_model: Some("composer-2.5".into()),
+            allowlist: models.iter().map(|m| m.id.clone()).collect(),
+            task_class: Some(TaskClass::ShortClassify),
+            length: None,
+            complexity: None,
+            tools_required: Some(false),
+            latency_mode: None,
+            prefix_reuse: Some(PrefixReuse::Strong),
+            prefix_tokens_est: Some(400),
+            tokens_in_est: Some(500),
+            tokens_out_est: Some(5),
+        };
+        let queue = InMemoryScoreQueue::new();
+        let store = MemStore::new();
+        let result = complete_turn_with_model_source(
+            &router,
+            &request,
+            &src,
+            ClientMode::Stub,
+            &queue,
+            &store,
+            None,
+        )
+        .unwrap();
+        assert!(
+            models.iter().any(|m| m.id == result.decision.chosen_model),
+            "chosen_model must be a list_models id"
+        );
+        assert_eq!(result.outcome.model_output, "billing");
+        assert!(!result.decision.rough_cost_note.is_empty());
+        assert!(result.decision.rough_cost_note.contains("cache_read"));
     }
 }

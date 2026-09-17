@@ -1,57 +1,67 @@
-# Illustrative cost / cache / tier table — replace with your real provider rates.
-# Paper policy: docs/decision-rules.md (T-small | T-mid | T-frontier bands).
-# Units: USD per million tokens (MTok). Bands are placeholders, not live quotes.
+# Illustrative cost / cache / tier table for route-only demos (no ModelSource).
+#
+# Prefer ModelSource.list_models() prices when executing (Patrick lock 2026-09-17).
+# Cursor snapshot: https://cursor.com/docs/models-and-pricing (2026-09-17).
+# Units: USD per million tokens (MTok).
 #
 # Load with: typesafe-llm-router route --catalog config/models.example.toml ...
 
-[models.gpt-4o-mini]
-id = "gpt-4o-mini"
+[models."composer-2.5"]
+id = "composer-2.5"
 tier = "T-small"
 tool_capable = true
 cache_eligible = true
-input_usd_per_mtok = 0.15
-output_usd_per_mtok = 0.60
-cost_band_in = "$0.05–0.20"
-cost_band_out = "$0.20–0.80"
-cache_read_usd_per_mtok = 0.075
-cache_write_usd_per_mtok = 0.375
-notes = "T-small; prompt-cache friendly for long sessions."
+input_usd_per_mtok = 0.50
+output_usd_per_mtok = 2.50
+cache_read_usd_per_mtok = 0.20
+notes = "Composer 2.5 — low cache_read; prefer for strong prefix reuse."
 
-[models."claude-haiku-3.5"]
-id = "claude-haiku-3.5"
+[models."composer-2.5-fast"]
+id = "composer-2.5-fast"
 tier = "T-small"
 tool_capable = true
 cache_eligible = true
-input_usd_per_mtok = 0.80
-output_usd_per_mtok = 4.0
-cost_band_in = "$0.05–0.20"
-cost_band_out = "$0.20–0.80"
-cache_read_usd_per_mtok = 0.08
-cache_write_usd_per_mtok = 1.0
-notes = "T-small; low latency / cost."
+input_usd_per_mtok = 3.00
+output_usd_per_mtok = 15.00
+cache_read_usd_per_mtok = 0.50
+notes = "Composer 2.5 Fast."
 
-[models.gpt-4o]
-id = "gpt-4o"
+[models."grok-4.6"]
+id = "grok-4.6"
 tier = "T-mid"
 tool_capable = true
 cache_eligible = true
-input_usd_per_mtok = 2.50
-output_usd_per_mtok = 10.0
-cost_band_in = "$0.50–2.00"
-cost_band_out = "$1.50–8.00"
-cache_read_usd_per_mtok = 1.25
-cache_write_usd_per_mtok = 6.25
-notes = "T-mid; routine code / creative."
+input_usd_per_mtok = 2.00
+output_usd_per_mtok = 6.00
+cache_read_usd_per_mtok = 0.50
+notes = "Grok 4.6 — Cursor Models pool."
 
-[models.claude-sonnet-4]
-id = "claude-sonnet-4"
+[models."grok-4.6-fast"]
+id = "grok-4.6-fast"
+tier = "T-mid"
+tool_capable = true
+cache_eligible = true
+input_usd_per_mtok = 4.00
+output_usd_per_mtok = 12.00
+cache_read_usd_per_mtok = 1.00
+notes = "Grok 4.6 Fast."
+
+[models."grok-4.5"]
+id = "grok-4.5"
 tier = "T-frontier"
 tool_capable = true
 cache_eligible = true
-input_usd_per_mtok = 3.0
-output_usd_per_mtok = 15.0
-cost_band_in = "$3.00–15.00"
-cost_band_out = "$12.00–60.00"
-cache_read_usd_per_mtok = 0.30
-cache_write_usd_per_mtok = 3.75
-notes = "T-frontier; long-reason / brittle tool loops; aggressive cache-read discount."
+input_usd_per_mtok = 2.00
+output_usd_per_mtok = 6.00
+cache_read_usd_per_mtok = 0.50
+notes = "Grok 4.5 — Cursor Models pool."
+
+[models."grok-4.5-fast"]
+id = "grok-4.5-fast"
+tier = "T-frontier"
+tool_capable = true
+cache_eligible = true
+input_usd_per_mtok = 4.00
+output_usd_per_mtok = 18.00
+cache_read_usd_per_mtok = 1.00
+notes = "Grok 4.5 Fast."

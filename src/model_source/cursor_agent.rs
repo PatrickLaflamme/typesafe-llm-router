@@ -1,15 +1,15 @@
 //! Cursor Agent model source via Node sidecar (`@cursor/sdk`).
 //!
-//! Typesafe Router design: `Agent.create({ apiKey, model:{id}, local:{cwd} })` + send/wait.
+//! Uses `Agent.prompt(message, { apiKey, model:{id}, local:{cwd} })` (one-shot).
 //! Auth: `CURSOR_API_KEY` env only (never commit secrets).
 //!
-//! No first-party Rust SDK — sidecar or [SDK Bridge](https://cursor.com/docs/sdk/bridge).
-//! Tier → Cursor id map: `config/model-map.toml`.
+//! **Pricing snapshot** (USD / 1M tokens) baked into [`ModelInfo`]:
+//! source <https://cursor.com/docs/models-and-pricing> as of **2026-09-17**.
+//! Refresh when Cursor docs change. No separate cost TOML required for Choice.
 
 use std::env;
-use std::fs;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 use serde::{Deserialize, Serialize};
@@ -23,15 +23,11 @@ use crate::error::ModelSourceError;
 pub const CURSOR_API_KEY_ENV: &str = "CURSOR_API_KEY";
 pub const CURSOR_HELPER_ENV: &str = "CURSOR_AGENT_HELPER";
 pub const DEFAULT_HELPER_REL: &str = "scripts/cursor_agent_complete.mjs";
-pub const DEFAULT_MODEL_MAP_REL: &str = "config/model-map.toml";
 
-/// Cursor Agent SDK source (Node helper → `@cursor/sdk`).
-///
-/// TODO: optional Connect client against `cursor-sdk-bridge` once binaries are pinned.
+/// Cursor Agent SDK source (Node helper → `@cursor/sdk` `Agent.prompt`).
 #[derive(Debug, Clone)]
 pub struct CursorAgentSdkSource {
     pub helper_path: PathBuf,
-    pub model_map_path: PathBuf,
     pub api_key: Option<String>,
     pub node_bin: String,
 }
@@ -41,15 +37,11 @@ impl CursorAgentSdkSource {
         let helper_path = env::var(CURSOR_HELPER_ENV)
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from(DEFAULT_HELPER_REL));
-        let model_map_path = env::var("CURSOR_MODEL_MAP")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| PathBuf::from(DEFAULT_MODEL_MAP_REL));
         let api_key = env::var(CURSOR_API_KEY_ENV)
             .ok()
             .filter(|s| !s.trim().is_empty());
         Self {
             helper_path,
-            model_map_path,
             api_key,
             node_bin: env::var("NODE_BIN").unwrap_or_else(|_| "node".into()),
         }
@@ -58,77 +50,71 @@ impl CursorAgentSdkSource {
     pub fn new(helper_path: impl Into<PathBuf>, api_key: Option<String>) -> Self {
         Self {
             helper_path: helper_path.into(),
-            model_map_path: PathBuf::from(DEFAULT_MODEL_MAP_REL),
             api_key,
             node_bin: "node".into(),
         }
     }
 }
 
-#[derive(Debug, Deserialize)]
-struct ModelMapFile {
-    tiers: ModelMapTiers,
-}
-
-#[derive(Debug, Deserialize)]
-struct ModelMapTiers {
-    #[serde(rename = "T-small")]
-    t_small: Option<ModelMapEntry>,
-    #[serde(rename = "T-mid")]
-    t_mid: Option<ModelMapEntry>,
-    #[serde(rename = "T-frontier")]
-    t_frontier: Option<ModelMapEntry>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ModelMapEntry {
-    cursor_model_id: String,
-    #[serde(default)]
-    label: Option<String>,
-}
-
-fn load_model_map(path: &Path) -> Vec<ModelInfo> {
-    let Ok(raw) = fs::read_to_string(path) else {
-        return placeholder_models();
-    };
-    let Ok(file) = toml::from_str::<ModelMapFile>(&raw) else {
-        return placeholder_models();
-    };
-    let mut out = Vec::new();
-    if let Some(e) = file.tiers.t_small {
-        out.push(ModelInfo {
-            id: e.cursor_model_id,
-            label: e.label.or_else(|| Some("T-small map".into())),
-            tier: Some(ModelTier::Small),
-        });
-    }
-    if let Some(e) = file.tiers.t_mid {
-        out.push(ModelInfo {
-            id: e.cursor_model_id,
-            label: e.label.or_else(|| Some("T-mid map".into())),
-            tier: Some(ModelTier::Mid),
-        });
-    }
-    if let Some(e) = file.tiers.t_frontier {
-        out.push(ModelInfo {
-            id: e.cursor_model_id,
-            label: e.label.or_else(|| Some("T-frontier map".into())),
-            tier: Some(ModelTier::Frontier),
-        });
-    }
-    if out.is_empty() {
-        placeholder_models()
-    } else {
-        out
-    }
-}
-
-fn placeholder_models() -> Vec<ModelInfo> {
+/// Cursor Models pool + prices from docs (2026-09-17 snapshot).
+///
+/// Source: https://cursor.com/docs/models-and-pricing
+fn cursor_model_catalog() -> Vec<ModelInfo> {
+    // Prices: input / cache_read / output — USD per 1M tokens.
     vec![
         ModelInfo {
             id: "composer-2.5".into(),
-            label: Some("placeholder until Cursor.models.list".into()),
-            tier: Some(ModelTier::Mid),
+            label: Some("Composer 2.5 — prefer when prefix reuse / batch latency OK".into()),
+            price_input_per_mtok: 0.50,
+            price_output_per_mtok: 2.50,
+            price_cache_read_per_mtok: Some(0.20),
+            price_cache_write_per_mtok: None,
+            tier_hint: Some(ModelTier::Small),
+        },
+        ModelInfo {
+            id: "composer-2.5-fast".into(),
+            label: Some("Composer 2.5 Fast — ~6× standard input".into()),
+            price_input_per_mtok: 3.00,
+            price_output_per_mtok: 15.00,
+            price_cache_read_per_mtok: Some(0.50),
+            price_cache_write_per_mtok: None,
+            tier_hint: Some(ModelTier::Small),
+        },
+        ModelInfo {
+            id: "grok-4.6".into(),
+            label: Some("Grok 4.6 — Cursor Models pool".into()),
+            price_input_per_mtok: 2.00,
+            price_output_per_mtok: 6.00,
+            price_cache_read_per_mtok: Some(0.50),
+            price_cache_write_per_mtok: None,
+            tier_hint: Some(ModelTier::Mid),
+        },
+        ModelInfo {
+            id: "grok-4.6-fast".into(),
+            label: Some("Grok 4.6 Fast".into()),
+            price_input_per_mtok: 4.00,
+            price_output_per_mtok: 12.00,
+            price_cache_read_per_mtok: Some(1.00),
+            price_cache_write_per_mtok: None,
+            tier_hint: Some(ModelTier::Mid),
+        },
+        ModelInfo {
+            id: "grok-4.5".into(),
+            label: Some("Grok 4.5 — Cursor Models pool".into()),
+            price_input_per_mtok: 2.00,
+            price_output_per_mtok: 6.00,
+            price_cache_read_per_mtok: Some(0.50),
+            price_cache_write_per_mtok: None,
+            tier_hint: Some(ModelTier::Frontier),
+        },
+        ModelInfo {
+            id: "grok-4.5-fast".into(),
+            label: Some("Grok 4.5 Fast".into()),
+            price_input_per_mtok: 4.00,
+            price_output_per_mtok: 18.00,
+            price_cache_read_per_mtok: Some(1.00),
+            price_cache_write_per_mtok: None,
+            tier_hint: Some(ModelTier::Frontier),
         },
     ]
 }
@@ -136,20 +122,40 @@ fn placeholder_models() -> Vec<ModelInfo> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
 
     #[test]
-    fn list_models_reads_model_map_toml() {
-        let src = CursorAgentSdkSource {
-            helper_path: PathBuf::from("scripts/cursor_agent_complete.mjs"),
-            model_map_path: PathBuf::from("config/model-map.toml"),
-            api_key: None,
-            node_bin: "node".into(),
-        };
+    fn list_models_bakes_cursor_pricing_snapshot() {
+        let src = CursorAgentSdkSource::new("scripts/cursor_agent_complete.mjs", None);
         let models = src.list_models().unwrap();
-        assert!(models.len() >= 3);
-        assert!(models.iter().any(|m| m.tier == Some(ModelTier::Small)));
-        assert!(models.iter().any(|m| m.tier == Some(ModelTier::Frontier)));
+        assert_eq!(models.len(), 6);
+
+        let c = models.iter().find(|m| m.id == "composer-2.5").unwrap();
+        assert_eq!(c.price_input_per_mtok, 0.50);
+        assert_eq!(c.price_cache_read_per_mtok, Some(0.20));
+        assert_eq!(c.price_output_per_mtok, 2.50);
+
+        let cf = models.iter().find(|m| m.id == "composer-2.5-fast").unwrap();
+        assert_eq!(cf.price_input_per_mtok, 3.00);
+        assert_eq!(cf.price_cache_read_per_mtok, Some(0.50));
+        assert_eq!(cf.price_output_per_mtok, 15.00);
+
+        let g = models.iter().find(|m| m.id == "grok-4.6").unwrap();
+        assert_eq!(g.price_input_per_mtok, 2.00);
+        assert_eq!(g.price_cache_read_per_mtok, Some(0.50));
+        assert_eq!(g.price_output_per_mtok, 6.00);
+
+        let gf = models.iter().find(|m| m.id == "grok-4.6-fast").unwrap();
+        assert_eq!(gf.price_input_per_mtok, 4.00);
+        assert_eq!(gf.price_output_per_mtok, 12.00);
+
+        let g45 = models.iter().find(|m| m.id == "grok-4.5").unwrap();
+        assert_eq!(g45.price_input_per_mtok, 2.00);
+        assert_eq!(g45.price_output_per_mtok, 6.00);
+
+        let g45f = models.iter().find(|m| m.id == "grok-4.5-fast").unwrap();
+        assert_eq!(g45f.price_input_per_mtok, 4.00);
+        assert_eq!(g45f.price_cache_read_per_mtok, Some(1.00));
+        assert_eq!(g45f.price_output_per_mtok, 18.00);
     }
 }
 
@@ -184,7 +190,7 @@ impl ModelSource for CursorAgentSdkSource {
     }
 
     fn list_models(&self) -> Result<Vec<ModelInfo>, ModelSourceError> {
-        Ok(load_model_map(&self.model_map_path))
+        Ok(cursor_model_catalog())
     }
 
     fn complete(&self, req: &CompleteRequest) -> Result<CompleteResponse, ModelSourceError> {
@@ -197,7 +203,7 @@ impl ModelSource for CursorAgentSdkSource {
         if !self.helper_path.exists() {
             return Err(ModelSourceError::CursorHelper(format!(
                 "helper not found at {} — set {CURSOR_HELPER_ENV} or run from repo root \
-                 (docs/model-source.md). Bridge TODO: Connect → cursor-sdk-bridge.",
+                 (docs/model-source.md).",
                 self.helper_path.display()
             )));
         }
@@ -270,7 +276,7 @@ impl ModelSource for CursorAgentSdkSource {
                 Some(serde_json::json!({
                     "helper": self.helper_path.display().to_string(),
                     "runtime": runtime,
-                    "sdk": "Agent.create({ apiKey, model:{id}, local:{cwd} }) + send"
+                    "sdk": "Agent.prompt(message, { apiKey, model:{id}, local:{cwd} })"
                 }))
             }),
         })
