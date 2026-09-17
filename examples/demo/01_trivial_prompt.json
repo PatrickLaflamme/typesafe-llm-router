@@ -1,0 +1,22 @@
+{
+  "session": [
+    {
+      "role": "system",
+      "content": "You label support tickets with exactly one of: billing | bug | feature | other. Reply with one label only."
+    },
+    {
+      "role": "user",
+      "content": "I was charged twice for my annual plan. Please fix."
+    }
+  ],
+  "current_model": null,
+  "task_class": "short-classify",
+  "length": "short",
+  "complexity": "simple",
+  "tools_required": false,
+  "latency_mode": "interactive",
+  "prefix_reuse": "strong",
+  "prefix_tokens_est": 400,
+  "tokens_in_est": 480,
+  "tokens_out_est": 5
+}

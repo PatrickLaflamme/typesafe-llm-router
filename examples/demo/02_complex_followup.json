@@ -1,0 +1,30 @@
+{
+  "session": [
+    {
+      "role": "system",
+      "content": "You label support tickets with exactly one of: billing | bug | feature | other. Reply with one label only."
+    },
+    {
+      "role": "user",
+      "content": "I was charged twice for my annual plan. Please fix."
+    },
+    {
+      "role": "assistant",
+      "content": "billing"
+    },
+    {
+      "role": "user",
+      "content": "Hold on — escalate this. Design a multi-region billing reconciliation system that detects double charges across Stripe + our ledger + tax jurisdictions, with CAP-tradeoff analysis, idempotency keys, saga/outbox failure modes, and a phased migration from our current single-DB write path. Produce an architecture memo with threat model, consistency guarantees, and rollback plan. Offline; no tools."
+    }
+  ],
+  "current_model": "composer-2.5",
+  "task_class": "long-reason",
+  "length": "long",
+  "complexity": "hard",
+  "tools_required": false,
+  "latency_mode": "batch",
+  "prefix_reuse": "weak",
+  "prefix_tokens_est": 400,
+  "tokens_in_est": 2200,
+  "tokens_out_est": 2800
+}
