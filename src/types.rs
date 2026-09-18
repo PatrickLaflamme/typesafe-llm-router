@@ -84,8 +84,8 @@ pub struct RouterRequest {
     /// Model already chosen for this session, if any.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub current_model: Option<String>,
-    /// Model ids Choice may select. When a ModelSource is selected and this is
-    /// empty, the CLI fills it from `ModelSource.list_models()`.
+    /// Model ids Choice may select. When a ModelProvider is selected and this is
+    /// empty, the CLI fills it from `ModelProvider.list_models()`.
     #[serde(default)]
     pub allowlist: Vec<String>,
 

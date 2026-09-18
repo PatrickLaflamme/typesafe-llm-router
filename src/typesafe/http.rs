@@ -39,7 +39,10 @@ impl HttpTypesafeClient {
         Self::new(base_url, api_key)
     }
 
-    pub fn new(base_url: impl Into<String>, api_key: impl Into<String>) -> Result<Self, TypesafeError> {
+    pub fn new(
+        base_url: impl Into<String>,
+        api_key: impl Into<String>,
+    ) -> Result<Self, TypesafeError> {
         let http = Client::builder()
             .timeout(Duration::from_secs(30))
             .build()

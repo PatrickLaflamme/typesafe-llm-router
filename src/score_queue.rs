@@ -27,6 +27,9 @@ pub trait ScoreQueue {
     fn enqueue(&self, job: ScoreJob) -> Result<(), RouterError>;
     fn dequeue(&self) -> Result<Option<ScoreJob>, RouterError>;
     fn len(&self) -> Result<usize, RouterError>;
+    fn is_empty(&self) -> Result<bool, RouterError> {
+        Ok(self.len()? == 0)
+    }
 }
 
 /// Persist / load [`RouteOutcome`] records (file dir or memory).
@@ -178,30 +181,30 @@ pub fn complete_turn_hot_path<C: TypesafeClient, Q: ScoreQueue, S: OutcomeStore>
     )
 }
 
-/// Hot path with pluggable [`crate::ModelSource`]: Choice → execute model → enqueue Score.
+/// Hot path with pluggable [`crate::ModelProvider`]: Choice → execute model → enqueue Score.
 ///
 /// Model execution latency is on the **execution** path. Score remains async after.
-pub fn complete_turn_with_model_source<
+pub fn complete_turn_with_model_provider<
     C: TypesafeClient,
-    M: crate::model_source::ModelSource,
+    M: crate::model_provider::ModelProvider,
     Q: ScoreQueue,
     S: OutcomeStore,
 >(
     router: &Router<'_, C>,
     request: &RouterRequest,
-    model_source: &M,
+    model_provider: &M,
     client_mode: ClientMode,
     queue: &Q,
     store: &S,
     cwd: Option<String>,
 ) -> Result<HotPathResult, RouterError> {
     let decision = router.route(request)?;
-    let req = crate::model_source::complete_request_from_session(
+    let req = crate::model_provider::complete_request_from_session(
         decision.chosen_model.clone(),
         &request.session,
         cwd,
     );
-    let exec = model_source.complete(&req)?;
+    let exec = model_provider.complete(&req)?;
     persist_pending_and_enqueue(
         router,
         request,
@@ -214,6 +217,7 @@ pub fn complete_turn_with_model_source<
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn persist_pending_and_enqueue<C: TypesafeClient, Q: ScoreQueue, S: OutcomeStore>(
     router: &Router<'_, C>,
     request: &RouterRequest,
@@ -423,11 +427,11 @@ mod tests {
     }
 
     #[test]
-    fn chosen_model_equals_model_source_complete_id() {
-        use crate::model_source::{StubModelSource, ModelSource};
-        use crate::types::{MessageRole, SessionMessage, TaskClass, PrefixReuse};
+    fn chosen_model_equals_model_provider_complete_id() {
+        use crate::model_provider::{ModelProvider, StubModelProvider};
+        use crate::types::{MessageRole, PrefixReuse, SessionMessage, TaskClass};
 
-        let src = StubModelSource::with_task_class(Some(TaskClass::ShortClassify));
+        let src = StubModelProvider::with_task_class(Some(TaskClass::ShortClassify));
         let models = src.list_models().unwrap();
         let catalog = ModelCatalog::from_model_infos(&models);
         let client = StubTypesafeClient::new();
@@ -457,7 +461,7 @@ mod tests {
         };
         let queue = InMemoryScoreQueue::new();
         let store = MemStore::new();
-        let result = complete_turn_with_model_source(
+        let result = complete_turn_with_model_provider(
             &router,
             &request,
             &src,

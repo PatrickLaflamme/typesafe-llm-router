@@ -12,9 +12,7 @@ use super::api::{
 use super::TypesafeClient;
 use crate::error::TypesafeError;
 use crate::pack::{ROUTE_QUESTION_ID, WHY_QUESTION_ID};
-use crate::score::{
-    INSTRUCTION_FOLLOW_QUESTION_ID, QUALITY_QUESTION_ID, TASK_FIT_QUESTION_ID,
-};
+use crate::score::{INSTRUCTION_FOLLOW_QUESTION_ID, QUALITY_QUESTION_ID, TASK_FIT_QUESTION_ID};
 
 /// Deterministic stub: heuristics from packed state signals, else first option.
 #[derive(Debug, Default, Clone)]
@@ -113,10 +111,7 @@ impl StubTypesafeClient {
         };
         let mut probabilities = BTreeMap::new();
         for opt in &options {
-            probabilities.insert(
-                opt.clone(),
-                if opt == &chosen { 0.7 } else { remainder },
-            );
+            probabilities.insert(opt.clone(), if opt == &chosen { 0.7 } else { remainder });
         }
 
         let reason = self.force_reason.clone().unwrap_or_else(|| {
@@ -162,10 +157,7 @@ impl StubTypesafeClient {
             0.2 / (why_options.len() as f64 - 1.0)
         };
         for opt in &why_options {
-            why_probs.insert(
-                opt.clone(),
-                if opt == &reason { 0.8 } else { why_rem },
-            );
+            why_probs.insert(opt.clone(), if opt == &reason { 0.8 } else { why_rem });
         }
 
         let mut answers = BTreeMap::new();

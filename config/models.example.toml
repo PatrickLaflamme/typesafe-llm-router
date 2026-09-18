@@ -1,6 +1,6 @@
-# Illustrative cost / cache / tier table for route-only demos (no ModelSource).
+# Illustrative cost / cache / tier table for route-only demos (no ModelProvider).
 #
-# Prefer ModelSource.list_models() prices when executing (Patrick lock 2026-09-17).
+# Prefer ModelProvider.list_models() prices when executing (Patrick lock 2026-09-17).
 # Cursor snapshot: https://cursor.com/docs/models-and-pricing (2026-09-17).
 # Units: USD per million tokens (MTok).
 #

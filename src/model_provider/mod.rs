@@ -1,31 +1,43 @@
 //! Pluggable model execution after Choice routing.
 //!
-//! Hot path: Choice route → [`ModelSource::complete`] → return decision + output.
+//! Hot path: Choice route → [`ModelProvider::complete`] → return decision + output.
 //! Score stays async *after* output is durable (see [`crate::score_queue`]).
 //!
 //! **Patrick lock (2026-09-17):** Choice allowlist MUST come from
-//! [`ModelSource::list_models`] (source model ids only). Token prices live on
+//! [`ModelProvider::list_models`] (source model ids only). Token prices live on
 //! [`ModelInfo`]. `RouterDecision.chosen_model` **is** the id passed to
-//! [`ModelSource::complete`] — no post-Choice remap.
+//! [`ModelProvider::complete`] — no post-Choice remap.
 //!
-//! Trait shape: `docs/model-source.md`.
+//! Trait shape: `docs/model-provider.md`.
+//!
+//! Historical name: **ModelSource** / informal **ModelService** — prefer
+//! [`ModelProvider`].
 
 mod cursor_agent;
+mod databricks_ai_gateway;
 mod stub;
 
 pub use cursor_agent::{CursorAgentSdkSource, CURSOR_API_KEY_ENV, CURSOR_HELPER_ENV};
-pub use stub::StubModelSource;
+pub use databricks_ai_gateway::{
+    chat_messages_from_request, default_databricks_catalog, load_credentials_from_cli,
+    ChatCompletionsRequest, ChatMessage, DatabricksAiGatewayProvider, DatabricksCliCredentials,
+    DatabricksCliRunner, DatabricksGatewayPath, DatabricksGatewayTransport, ProcessDatabricksCli,
+    ReqwestDatabricksTransport, DATABRICKS_CLI_ENV, DATABRICKS_CONFIG_PROFILE_ENV,
+    DATABRICKS_HOST_ENV, DATABRICKS_MODELS_ENV, DATABRICKS_MODEL_PROVIDER_SERVICE_ENV,
+    DATABRICKS_TOKEN_ENV,
+};
+pub use stub::StubModelProvider;
 
 use serde::{Deserialize, Serialize};
 
 use crate::catalog::{ModelCostProfile, ModelTier};
-use crate::error::ModelSourceError;
+use crate::error::ModelProviderError;
 use crate::types::{MessageRole, SessionMessage};
 
 /// Stable backend name (`stub`, `cursor-agent`, …).
-pub type SourceName = &'static str;
+pub type ProviderName = &'static str;
 
-/// Source model card for [`ModelSource::list_models`].
+/// Source model card for [`ModelProvider::list_models`].
 ///
 /// Choice allowlist := these `id`s. Prices are USD per 1M tokens (lab bake-in
 /// from provider docs, or obvious fixture rates on the stub).
@@ -53,8 +65,8 @@ pub struct ModelInfo {
 impl ModelInfo {
     /// Map source pricing into the catalog profile used by Choice packing.
     pub fn to_cost_profile(&self) -> ModelCostProfile {
-        let cache_eligible = self.price_cache_read_per_mtok.is_some()
-            || self.price_cache_write_per_mtok.is_some();
+        let cache_eligible =
+            self.price_cache_read_per_mtok.is_some() || self.price_cache_write_per_mtok.is_some();
         ModelCostProfile {
             id: Some(self.id.clone()),
             tier: self.tier_hint,
@@ -126,18 +138,19 @@ pub struct UsageMeta {
 
 /// Execute a chosen model. Sync for v0 (crate is sync).
 ///
-/// Cursor execution may be slow — that latency is on the **model-execution**
-/// path. Score remains async after output is durable.
-pub trait ModelSource {
-    fn name(&self) -> SourceName;
+/// Formerly `ModelSource` (and sometimes called a "model service" in Databricks
+/// docs). Cursor / Databricks latency is on the **model-execution** path.
+/// Score remains async after output is durable.
+pub trait ModelProvider {
+    fn name(&self) -> ProviderName;
 
-    /// Source-native model cards (ids + prices). Choice allowlist := these ids.
-    fn list_models(&self) -> Result<Vec<ModelInfo>, ModelSourceError>;
+    /// Provider-native model cards (ids + prices). Choice allowlist := these ids.
+    fn list_models(&self) -> Result<Vec<ModelInfo>, ModelProviderError>;
 
-    fn complete(&self, req: &CompleteRequest) -> Result<CompleteResponse, ModelSourceError>;
+    fn complete(&self, req: &CompleteRequest) -> Result<CompleteResponse, ModelProviderError>;
 }
 
-/// Flatten a full session into a single prompt for ModelSource execution.
+/// Flatten a full session into a single prompt for ModelProvider execution.
 ///
 /// Includes system + user (+ assistant/tool) so classify demos keep the label
 /// instruction and return a short reply.
@@ -160,7 +173,7 @@ pub fn format_session_prompt(session: &[SessionMessage]) -> String {
 
 /// Build a [`CompleteRequest`] from a routed session.
 ///
-/// `model_id` must be the ModelSource id that Choice selected (no remap).
+/// `model_id` must be the ModelProvider id that Choice selected (no remap).
 pub fn complete_request_from_session(
     model_id: impl Into<String>,
     session: &[SessionMessage],
@@ -178,16 +191,16 @@ pub fn complete_request_from_session(
     }
 }
 
-/// Allowlist ids (+ optional current) from a ModelSource, optionally intersected
+/// Allowlist ids (+ optional current) from a ModelProvider, optionally intersected
 /// with an explicit fixture allowlist.
-pub fn allowlist_from_source(
+pub fn allowlist_from_provider(
     models: &[ModelInfo],
     explicit: &[String],
     current_model: Option<&str>,
-) -> Result<(Vec<String>, crate::catalog::ModelCatalog), ModelSourceError> {
+) -> Result<(Vec<String>, crate::catalog::ModelCatalog), ModelProviderError> {
     if models.is_empty() {
-        return Err(ModelSourceError::Other(
-            "ModelSource.list_models() returned no models".into(),
+        return Err(ModelProviderError::Other(
+            "ModelProvider.list_models() returned no models".into(),
         ));
     }
 
@@ -198,8 +211,8 @@ pub fn allowlist_from_source(
     } else {
         for id in explicit {
             if !models.iter().any(|m| m.id == *id) {
-                return Err(ModelSourceError::Other(format!(
-                    "allowlist id `{id}` is not in ModelSource.list_models()"
+                return Err(ModelProviderError::Other(format!(
+                    "allowlist id `{id}` is not in ModelProvider.list_models()"
                 )));
             }
         }
@@ -208,8 +221,8 @@ pub fn allowlist_from_source(
 
     if let Some(cur) = current_model {
         if !allowlist.iter().any(|m| m == cur) {
-            return Err(ModelSourceError::Other(format!(
-                "current_model `{cur}` is not in the ModelSource allowlist"
+            return Err(ModelProviderError::Other(format!(
+                "current_model `{cur}` is not in the ModelProvider allowlist"
             )));
         }
     }
@@ -218,7 +231,11 @@ pub fn allowlist_from_source(
 }
 
 // Backward-compatible aliases used in early scaffold docs / call sites.
+pub type ModelProviderRequest = CompleteRequest;
+pub type ModelProviderResult = CompleteResponse;
+/// @deprecated Prefer [`CompleteRequest`].
 pub type ModelSourceRequest = CompleteRequest;
+/// @deprecated Prefer [`CompleteResponse`].
 pub type ModelSourceResult = CompleteResponse;
 
 #[cfg(test)]
@@ -245,7 +262,7 @@ mod tests {
     }
 
     #[test]
-    fn allowlist_from_source_rejects_foreign_ids() {
+    fn allowlist_from_provider_rejects_foreign_ids() {
         let models = vec![ModelInfo {
             id: "composer-2.5".into(),
             label: None,
@@ -255,7 +272,7 @@ mod tests {
             price_cache_write_per_mtok: None,
             tier_hint: Some(ModelTier::Small),
         }];
-        let err = allowlist_from_source(&models, &["gpt-4o-mini".into()], None).unwrap_err();
+        let err = allowlist_from_provider(&models, &["gpt-4o-mini".into()], None).unwrap_err();
         assert!(err.to_string().contains("gpt-4o-mini"));
     }
 }
