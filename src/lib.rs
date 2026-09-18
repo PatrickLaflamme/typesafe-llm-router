@@ -25,7 +25,7 @@ pub use error::{ModelProviderError, RouterError, TypesafeError};
 pub use model_provider::{
     allowlist_from_provider, chat_messages_from_request, complete_request_from_session,
     default_databricks_catalog, format_session_prompt, load_credentials_from_cli,
-    ChatCompletionsRequest, ChatMessage, CompleteRequest, CompleteResponse, CursorAgentSdkSource,
+    ChatCompletionsRequest, ChatMessage, CompleteRequest, CompleteResponse, CursorAgentSdkProvider,
     DatabricksAiGatewayProvider, DatabricksCliCredentials, DatabricksCliRunner,
     DatabricksGatewayPath, DatabricksGatewayTransport, ModelInfo, ModelProvider,
     ModelProviderRequest, ModelProviderResult, ModelRuntime, ProcessDatabricksCli,
@@ -51,8 +51,10 @@ pub use types::{
 pub use typesafe::{HttpTypesafeClient, StubTypesafeClient, TypesafeClient};
 
 /// Alias kept for older call sites / docs.
-pub type CursorAgentModelProvider = CursorAgentSdkSource;
-/// @deprecated Prefer [`ModelProvider`] / [`CursorAgentSdkSource`].
-pub type CursorAgentModelSource = CursorAgentSdkSource;
+pub type CursorAgentModelProvider = CursorAgentSdkProvider;
+/// @deprecated Prefer [`CursorAgentSdkProvider`].
+pub type CursorAgentSdkSource = CursorAgentSdkProvider;
+/// @deprecated Prefer [`CursorAgentSdkProvider`].
+pub type CursorAgentModelSource = CursorAgentSdkProvider;
 /// @deprecated Prefer [`ModelProviderError`].
 pub type ModelSourceError = ModelProviderError;

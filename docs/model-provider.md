@@ -61,13 +61,13 @@ demos keep the label instruction. Chat-style providers (Databricks) prefer `mess
 | Impl | Path | Behavior |
 | --- | --- | --- |
 | **StubModelProvider** | `src/model_provider/stub.rs` | Fixture text, **no network**; Cursor-style ids + **obvious fixture** $/MTok |
-| **CursorAgentSdkSource** | `src/model_provider/cursor_agent.rs` | Node sidecar (`scripts/cursor_agent_complete.mjs`, ESM) → `@cursor/sdk` **`Agent.prompt`**; setup: **`npm i @cursor/sdk`**; auth: **`CURSOR_API_KEY` only** |
+| **CursorAgentSdkProvider** | `src/model_provider/cursor_agent.rs` | Node sidecar (`scripts/cursor_agent_complete.mjs`, ESM) → `@cursor/sdk` **`Agent.prompt`**; setup: **`npm i`** (see root `package.json`) or **`npm i @cursor/sdk`**; auth: **`CURSOR_API_KEY` only** |
 | **DatabricksAiGatewayProvider** | `src/model_provider/databricks_ai_gateway.rs` | Unity AI Gateway chat completions; auth via **Databricks CLI** (`databricks auth login` → host from `auth env`, token+expiry from `auth token`) |
 
 ### Cursor pricing snapshot (USD / 1M tokens)
 
 Source: <https://cursor.com/docs/models-and-pricing> (fetched **2026-09-17**). Baked into
-`CursorAgentSdkSource::list_models` / `ModelInfo`.
+`CursorAgentSdkProvider::list_models` / `ModelInfo`.
 
 | id | input | cache read | output |
 | --- | ---: | ---: | ---: |
@@ -142,7 +142,7 @@ cargo run -- demo --session examples/a_e/b_short_classify.json --model-provider 
 cargo run -- route --session examples/a_e/b_short_classify.json --stub --execute --verbose
 
 # Live Cursor ModelProvider
-#   npm i @cursor/sdk   # once (ESM sidecar: scripts/cursor_agent_complete.mjs)
+#   npm i   # once — installs @cursor/sdk from root package.json (ESM sidecar)
 #   export CURSOR_API_KEY=…   # never commit
 cargo run -- route --session examples/a_e/b_short_classify.json --model-provider cursor --execute
 
@@ -152,6 +152,8 @@ cargo run -- route --session examples/a_e/b_short_classify.json --model-provider
 ```
 
 `--model-source` remains a visible alias of `--model-provider`.
+
+Copy-paste demo scripts (stub / Cursor / Databricks-offline): [demos.md](demos.md).
 
 A–E fixtures may omit `allowlist`; when a ModelProvider is selected the CLI fills it from
 `list_models()`.

@@ -97,6 +97,10 @@ fn stub_provider_hot_path_enqueues_score_without_blocking() {
     assert_eq!(hot.outcome.model_output, "billing");
     assert_eq!(hot.decision.chosen_model, hot.outcome.decision.chosen_model);
     assert_eq!(hot.outcome.scores_status, ScoresStatus::Pending);
+    assert!(
+        hot.outcome.scores.is_none(),
+        "hot path must return before Score drain"
+    );
     assert_eq!(queue.len().unwrap(), 1);
     assert_eq!(store.outcomes.lock().unwrap().len(), 1);
 

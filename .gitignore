@@ -5,3 +5,4 @@
 !.env.example
 *.pem
 .DS_Store
+node_modules/

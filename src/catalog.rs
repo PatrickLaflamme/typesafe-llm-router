@@ -154,9 +154,9 @@ impl ModelCatalog {
     ///
     /// Prefer [`Self::from_model_infos`] when a ModelProvider is selected.
     /// These mirror Cursor source ids so fixtures stay consistent; rates are
-    /// the 2026-09-17 Cursor docs snapshot (same as CursorAgentSdkSource).
+    /// the 2026-09-17 Cursor docs snapshot (same as CursorAgentSdkProvider).
     pub fn demo() -> Self {
-        // Same cards as CursorAgentSdkSource — kept here for route-without-source.
+        // Same cards as CursorAgentSdkProvider — kept here for route-without-provider.
         Self::from_model_infos(&[
             ModelInfo {
                 id: "composer-2.5".into(),

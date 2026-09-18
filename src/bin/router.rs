@@ -13,7 +13,7 @@ use typesafe_llm_router::typesafe::{API_KEY_ENV, BASE_URL_ENV};
 use typesafe_llm_router::{
     allowlist_from_provider, complete_request_from_session, complete_turn_hot_path,
     complete_turn_with_model_provider, drain_score_queue, score_inline_lab_only, ClientMode,
-    CursorAgentSdkSource, DatabricksAiGatewayProvider, FileOutcomeStore, FileScoreQueue,
+    CursorAgentSdkProvider, DatabricksAiGatewayProvider, FileOutcomeStore, FileScoreQueue,
     HttpTypesafeClient, ModelCatalog, ModelProvider, OutcomeStore, Router, RouterRequest,
     ScoreQueue, ScoresStatus, StubModelProvider, StubTypesafeClient,
 };
@@ -470,7 +470,7 @@ fn prepare_request_from_provider(
             Ok((catalog, src.name()))
         }
         ModelProviderKind::Cursor => {
-            let src = CursorAgentSdkSource::from_env();
+            let src = CursorAgentSdkProvider::from_env();
             let models = src.list_models()?;
             let (allowlist, catalog) = allowlist_from_provider(
                 &models,
@@ -520,7 +520,7 @@ fn run_execute<C: typesafe_llm_router::TypesafeClient, Q: ScoreQueue, S: Outcome
             )?)
         }
         ModelProviderKind::Cursor => {
-            let src = CursorAgentSdkSource::from_env();
+            let src = CursorAgentSdkProvider::from_env();
             if log {
                 log_step(&format!("ModelProvider.complete ({})", src.name()));
             }

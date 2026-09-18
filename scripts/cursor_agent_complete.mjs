@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Cursor Agent sidecar for the Cursor ModelProvider (Rust `CursorAgentSdkSource`).
+ * Cursor Agent sidecar for the Cursor ModelProvider (Rust `CursorAgentSdkProvider`).
  *
  * JSON stdin → { api_key, chosen_model, prompt, cwd?, runtime? }
  * JSON stdout → { model_output, run_id?, input_tokens?, output_tokens?, raw_meta?, error? }
