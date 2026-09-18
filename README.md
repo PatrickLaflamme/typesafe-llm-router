@@ -7,27 +7,61 @@ Very low-latency **Rust library + CLI**: System One **Choice** routes a session 
 **R&D only.** Docs: [decision-rules](docs/decision-rules.md) ·
 [score-feedback-loop](docs/score-feedback-loop.md) · [model-provider](docs/model-provider.md).
 
-## Design lock (2026-09-17)
+## Design lock (Patrick VISION LOCKED · 2026-09-17)
 
 Choice allowlist + token prices come from `ModelProvider.list_models()`.
 `RouterDecision.chosen_model` **is** the id passed to `ModelProvider.complete`
-(no gpt-4o-mini → composer remap).
+(no gpt-4o-mini → composer remap). Score stays async / off the hot path.
+No secrets in repo.
 
-> Naming: `ModelSource` / informal “ModelService” → **`ModelProvider`**.
+> Naming: prefer **`ModelProvider`** everywhere. CLI flag `--model-provider`
+> (`--model-source` is a visible alias only).
 
-## Morning demo command
+## Production path (demo → live)
+
+```text
+ModelProvider.list_models() → Choice → ModelProvider.complete → decision + model_output
+                                                                  └→ async Score (queue)
+```
+
+### 1. Stub (offline, CI / morning recording)
 
 ```bash
 cargo run -- demo --session examples/a_e/b_short_classify.json --model-provider stub
+# or:
+cargo run -- route --session examples/a_e/b_short_classify.json --stub --execute --verbose
 ```
 
-Terminal shows three beats:
+Terminal shows three beats: **INPUT** → **PROCESS** (`list_models` → Choice →
+`complete` → score pending) → **OUTPUT** (`selected_model` + `model_output`).
 
-1. **INPUT** — session / prompt from the fixture
-2. **PROCESS** — `list_models` → Choice (stub) → `ModelProvider.complete` (stub) → score pending
-3. **OUTPUT** — `selected_model: composer-2.5 […]` + **`model_output: billing`**
+### 2. Cursor execute (live ModelProvider)
 
-Also: `cargo run -- route --session examples/a_e/b_short_classify.json --stub --execute --verbose`
+```bash
+npm i @cursor/sdk          # once — Node sidecar scripts/cursor_agent_complete.mjs
+export CURSOR_API_KEY=…    # never commit
+cargo run -- route --session examples/a_e/b_short_classify.json --model-provider cursor --execute
+```
+
+### 3. Databricks AI Gateway (CLI auth)
+
+```bash
+databricks auth login --host https://<workspace-url>
+# optional: export DATABRICKS_CONFIG_PROFILE=lab
+cargo run -- route --session examples/a_e/b_short_classify.json --model-provider databricks --execute
+```
+
+Host + token/expiry come from `databricks auth env` / `databricks auth token`
+(see [model-provider](docs/model-provider.md)).
+
+### Async Score
+
+Hot path never waits on Score. Outcomes enqueue under `.router-data/score-queue/`;
+drain later:
+
+```bash
+cargo run -- drain-score-queue
+```
 
 ## Quick smoke (A–E)
 
@@ -51,10 +85,13 @@ GitHub Actions: `.github/workflows/ci.yml` runs fmt, clippy, unit, integration, 
 | Variable | Purpose |
 | --- | --- |
 | `TYPESAFE_API_KEY` | Live Choice / Score |
-| `TYPESAFE_BASE_URL` | Optional |
+| `TYPESAFE_BASE_URL` | Optional Typesafe base URL |
 | `CURSOR_API_KEY` | Live Cursor ModelProvider (`--model-provider cursor`) |
+| `CURSOR_AGENT_HELPER` | Optional override for `scripts/cursor_agent_complete.mjs` |
 | `DATABRICKS_CONFIG_PROFILE` | Optional CLI profile after `databricks auth login` |
 | `DATABRICKS_CLI` | Optional path to `databricks` binary |
+| `DATABRICKS_AI_GATEWAY_MODELS` | Optional model catalog override |
+| `DATABRICKS_MODEL_PROVIDER_SERVICE` | Optional UC provider-service name |
 
 ## Types
 

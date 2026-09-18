@@ -61,7 +61,7 @@ demos keep the label instruction. Chat-style providers (Databricks) prefer `mess
 | Impl | Path | Behavior |
 | --- | --- | --- |
 | **StubModelProvider** | `src/model_provider/stub.rs` | Fixture text, **no network**; Cursor-style ids + **obvious fixture** $/MTok |
-| **CursorAgentSdkSource** | `src/model_provider/cursor_agent.rs` | Node sidecar → `@cursor/sdk` **`Agent.prompt`**; auth: **`CURSOR_API_KEY` only** |
+| **CursorAgentSdkSource** | `src/model_provider/cursor_agent.rs` | Node sidecar (`scripts/cursor_agent_complete.mjs`, ESM) → `@cursor/sdk` **`Agent.prompt`**; setup: **`npm i @cursor/sdk`**; auth: **`CURSOR_API_KEY` only** |
 | **DatabricksAiGatewayProvider** | `src/model_provider/databricks_ai_gateway.rs` | Unity AI Gateway chat completions; auth via **Databricks CLI** (`databricks auth login` → host from `auth env`, token+expiry from `auth token`) |
 
 ### Cursor pricing snapshot (USD / 1M tokens)
@@ -141,7 +141,9 @@ cargo run -- demo --session examples/a_e/b_short_classify.json --model-provider 
 # Execute with stub (default when --execute)
 cargo run -- route --session examples/a_e/b_short_classify.json --stub --execute --verbose
 
-# Live Cursor ModelProvider (requires CURSOR_API_KEY + npm i @cursor/sdk)
+# Live Cursor ModelProvider
+#   npm i @cursor/sdk   # once (ESM sidecar: scripts/cursor_agent_complete.mjs)
+#   export CURSOR_API_KEY=…   # never commit
 cargo run -- route --session examples/a_e/b_short_classify.json --model-provider cursor --execute
 
 # Live Databricks AI Gateway (requires Databricks CLI login)

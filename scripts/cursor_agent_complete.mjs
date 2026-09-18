@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Cursor Agent sidecar for CursorAgentSdkSource (Rust).
+ * Cursor Agent sidecar for the Cursor ModelProvider (Rust `CursorAgentSdkSource`).
  *
  * JSON stdin → { api_key, chosen_model, prompt, cwd?, runtime? }
  * JSON stdout → { model_output, run_id?, input_tokens?, output_tokens?, raw_meta?, error? }
@@ -9,12 +9,15 @@
  * `prompt` should be the full session (system + user) so classify demos
  * keep the label instruction.
  *
- * Requires: npm i @cursor/sdk  (and CURSOR_API_KEY in the environment / payload)
+ * Setup (once, from repo root):
+ *   npm i @cursor/sdk
+ *
+ * Auth: CURSOR_API_KEY in the environment or `api_key` in the JSON payload.
  * Docs: https://cursor.com/docs/api/sdk/typescript
  *
- * Never log api_key.
+ * Never log api_key. This file is ESM (`.mjs`) — use `import`, not `require`.
  */
-const fs = require("fs");
+import fs from "fs";
 
 async function main() {
   const raw = fs.readFileSync(0, "utf8");
