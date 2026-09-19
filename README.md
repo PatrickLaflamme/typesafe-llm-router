@@ -5,7 +5,8 @@ Very low-latency **Rust library + CLI**: System One **Choice** routes a session 
 (never on the hot path).
 
 **R&D only.** Docs: [decision-rules](docs/decision-rules.md) ·
-[score-feedback-loop](docs/score-feedback-loop.md) · [model-provider](docs/model-provider.md).
+[score-feedback-loop](docs/score-feedback-loop.md) · [model-provider](docs/model-provider.md) ·
+[demos](docs/demos.md) · [CHANGELOG](CHANGELOG.md).
 
 ## Design lock (Patrick VISION LOCKED · 2026-09-17)
 
@@ -35,11 +36,14 @@ cargo run -- route --session examples/a_e/b_short_classify.json --stub --execute
 Terminal shows three beats: **INPUT** → **PROCESS** (`list_models` → Choice →
 `complete` → score pending) → **OUTPUT** (`selected_model` + `model_output`).
 
+Copy-paste variants (Cursor live, Databricks offline note): [docs/demos.md](docs/demos.md).
+
 ### 2. Cursor execute (live ModelProvider)
 
 ```bash
-npm i @cursor/sdk          # once — Node sidecar scripts/cursor_agent_complete.mjs
-export CURSOR_API_KEY=…    # never commit
+npm i                     # installs @cursor/sdk from root package.json
+# or: npm i @cursor/sdk
+export CURSOR_API_KEY=…   # never commit
 cargo run -- route --session examples/a_e/b_short_classify.json --model-provider cursor --execute
 ```
 

@@ -31,7 +31,7 @@ impl ModelProvider for StubModelProvider {
     }
 
     fn list_models(&self) -> Result<Vec<ModelInfo>, ModelProviderError> {
-        // Obvious fixture USD/MTok — not Cursor live rates (see CursorAgentSdkSource).
+        // Obvious fixture USD/MTok — not Cursor live rates (see CursorAgentSdkProvider).
         Ok(vec![
             ModelInfo {
                 id: "composer-2.5".into(),

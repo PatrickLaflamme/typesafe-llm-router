@@ -17,7 +17,7 @@ mod cursor_agent;
 mod databricks_ai_gateway;
 mod stub;
 
-pub use cursor_agent::{CursorAgentSdkSource, CURSOR_API_KEY_ENV, CURSOR_HELPER_ENV};
+pub use cursor_agent::{CursorAgentSdkProvider, CURSOR_API_KEY_ENV, CURSOR_HELPER_ENV};
 pub use databricks_ai_gateway::{
     chat_messages_from_request, default_databricks_catalog, load_credentials_from_cli,
     ChatCompletionsRequest, ChatMessage, DatabricksAiGatewayProvider, DatabricksCliCredentials,

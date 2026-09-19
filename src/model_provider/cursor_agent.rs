@@ -22,15 +22,15 @@ pub const CURSOR_API_KEY_ENV: &str = "CURSOR_API_KEY";
 pub const CURSOR_HELPER_ENV: &str = "CURSOR_AGENT_HELPER";
 pub const DEFAULT_HELPER_REL: &str = "scripts/cursor_agent_complete.mjs";
 
-/// Cursor Agent SDK source (Node helper → `@cursor/sdk` `Agent.prompt`).
+/// Cursor Agent SDK provider (Node helper → `@cursor/sdk` `Agent.prompt`).
 #[derive(Debug, Clone)]
-pub struct CursorAgentSdkSource {
+pub struct CursorAgentSdkProvider {
     pub helper_path: PathBuf,
     pub api_key: Option<String>,
     pub node_bin: String,
 }
 
-impl CursorAgentSdkSource {
+impl CursorAgentSdkProvider {
     pub fn from_env() -> Self {
         let helper_path = env::var(CURSOR_HELPER_ENV)
             .map(PathBuf::from)
@@ -123,7 +123,7 @@ mod tests {
 
     #[test]
     fn list_models_bakes_cursor_pricing_snapshot() {
-        let src = CursorAgentSdkSource::new("scripts/cursor_agent_complete.mjs", None);
+        let src = CursorAgentSdkProvider::new("scripts/cursor_agent_complete.mjs", None);
         let models = src.list_models().unwrap();
         assert_eq!(models.len(), 6);
 
@@ -182,7 +182,7 @@ struct HelperResponse {
     error: Option<String>,
 }
 
-impl ModelProvider for CursorAgentSdkSource {
+impl ModelProvider for CursorAgentSdkProvider {
     fn name(&self) -> &'static str {
         "cursor-agent"
     }

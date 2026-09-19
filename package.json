@@ -1,0 +1,9 @@
+{
+  "name": "typesafe-llm-router-sidecar",
+  "private": true,
+  "description": "Node deps for the Cursor ModelProvider sidecar (scripts/cursor_agent_complete.mjs)",
+  "type": "module",
+  "dependencies": {
+    "@cursor/sdk": "1.0.31"
+  }
+}
