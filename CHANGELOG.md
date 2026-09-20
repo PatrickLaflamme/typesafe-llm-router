@@ -10,6 +10,15 @@ pinned in root `package.json` (not a published npm package).
 
 ## [Unreleased]
 
+### Added
+
+- M4 live Databricks smoke docs + CLI checklist (`docs/databricks-live.md`,
+  expanded `docs/demos.md` §3) and `scripts/smoke_databricks.sh` (refuses missing
+  auth; never prints access tokens). Lab login uses placeholder host only —
+  no real workspace URL in repo.
+- `examples/a_e/b_short_classify_databricks.json` — short-classify fixture with a
+  Databricks catalog `current_model` for the live smoke path.
+
 ### Changed
 
 - Renamed `CursorAgentSdkSource` → `CursorAgentSdkProvider` (ModelProvider-aligned).

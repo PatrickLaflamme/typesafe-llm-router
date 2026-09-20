@@ -6,7 +6,7 @@ Very low-latency **Rust library + CLI**: System One **Choice** routes a session 
 
 **R&D only.** Docs: [decision-rules](docs/decision-rules.md) ·
 [score-feedback-loop](docs/score-feedback-loop.md) · [model-provider](docs/model-provider.md) ·
-[demos](docs/demos.md) · [CHANGELOG](CHANGELOG.md).
+[demos](docs/demos.md) · [databricks-live](docs/databricks-live.md) · [CHANGELOG](CHANGELOG.md).
 
 ## Design lock (Patrick VISION LOCKED · 2026-09-17)
 
@@ -36,7 +36,7 @@ cargo run -- route --session examples/a_e/b_short_classify.json --stub --execute
 Terminal shows three beats: **INPUT** → **PROCESS** (`list_models` → Choice →
 `complete` → score pending) → **OUTPUT** (`selected_model` + `model_output`).
 
-Copy-paste variants (Cursor live, Databricks offline note): [docs/demos.md](docs/demos.md).
+Copy-paste variants (Cursor live, Databricks live checklist): [docs/demos.md](docs/demos.md).
 
 ### 2. Cursor execute (live ModelProvider)
 
@@ -47,16 +47,24 @@ export CURSOR_API_KEY=…   # never commit
 cargo run -- route --session examples/a_e/b_short_classify.json --model-provider cursor --execute
 ```
 
-### 3. Databricks AI Gateway (CLI auth)
+### 3. Databricks AI Gateway (CLI auth — lab)
+
+Live login is lab-side with a placeholder host in docs (`https://<workspace-url>`).
+Never commit the real host, tokens, or `.databrickscfg`. Checklist:
+[docs/databricks-live.md](docs/databricks-live.md) · [docs/demos.md §3](docs/demos.md#3-databricks-live-cli-checklist).
 
 ```bash
 databricks auth login --host https://<workspace-url>
 # optional: export DATABRICKS_CONFIG_PROFILE=lab
-cargo run -- route --session examples/a_e/b_short_classify.json --model-provider databricks --execute
+bash scripts/smoke_databricks.sh
+# or:
+cargo run -- demo \
+  --session examples/a_e/b_short_classify_databricks.json \
+  --model-provider databricks
 ```
 
 Host + token/expiry come from `databricks auth env` / `databricks auth token`
-(see [model-provider](docs/model-provider.md)).
+(see [model-provider](docs/model-provider.md)). CI stays stub/offline only.
 
 ### Async Score
 
