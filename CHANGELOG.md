@@ -12,6 +12,8 @@ pinned in root `package.json` (not a published npm package).
 
 ### Added
 
+- Project Cursor skill at `.cursor/skills/typesafe-ai` (upstream TypeSafe skill)
+  so Cloud Agents load live docs guidance for decisions/builds.
 - M4 live Databricks smoke docs + CLI checklist (`docs/databricks-live.md`,
   expanded `docs/demos.md` §3) and `scripts/smoke_databricks.sh` (refuses missing
   auth; never prints access tokens). Lab login uses placeholder host only —

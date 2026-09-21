@@ -92,6 +92,14 @@ cargo fmt --check
 
 GitHub Actions: `.github/workflows/ci.yml` runs fmt, clippy, unit, integration, and e2e jobs.
 
+## Cursor / skills (Cloud Agents)
+
+Cloud Agents should load the project skill at
+[`.cursor/skills/typesafe-ai`](.cursor/skills/typesafe-ai) for TypeSafe decisions
+and builds. Live API docs are the source of truth:
+[https://docs.typesafe.ai/api.md](https://docs.typesafe.ai/api.md) — do not invent
+fields. Keep `TYPESAFE_API_KEY` in the environment only (see `.env.example`).
+
 ## Env (no secrets in repo)
 
 | Variable | Purpose |
